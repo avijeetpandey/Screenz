@@ -60,11 +60,11 @@ enum DrawingTool: CaseIterable {
     var title: String {
         switch self {
         case .pen: return "Pen"
-        case .highlighter: return "Highlight"
+        case .highlighter: return "Highlighter"
         case .text: return "Text"
         case .arrow: return "Arrow"
         case .rectangle: return "Rectangle"
-        case .ellipse: return "Circle"
+        case .ellipse: return "Ellipse"
         }
     }
 }

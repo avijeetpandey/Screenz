@@ -91,7 +91,9 @@ struct CaptureHomeView: View {
                         color: .blue
                     ) {
                         Task {
-                            await screenshotService.captureFullScreen()
+                            if let image = await screenshotService.captureFullScreen() {
+                                screenshotService.addScreenshot(image)
+                            }
                         }
                     }
                     
@@ -111,7 +113,9 @@ struct CaptureHomeView: View {
                         color: .orange
                     ) {
                         Task {
-                            await screenshotService.captureWindow()
+                            if let image = await screenshotService.captureWindow() {
+                                screenshotService.addScreenshot(image)
+                            }
                         }
                     }
                     

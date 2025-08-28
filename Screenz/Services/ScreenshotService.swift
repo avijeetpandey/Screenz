@@ -46,172 +46,162 @@ class ScreenshotService: ObservableObject {
             return nil
         }
         
-        if #available(macOS 12.3, *) {
-            return await captureFullScreenWithScreenCaptureKit()
-        } else {
-            return await captureFullScreenLegacy()
-        }
+        // Always use ScreenCaptureKit for macOS 15.2+
+        return await captureFullScreenWithScreenCaptureKit()
     }
     
     @available(macOS 12.3, *)
     private func captureFullScreenWithScreenCaptureKit() async -> NSImage? {
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            
             guard let display = content.displays.first else { return nil }
             
-            let filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
+            let filter = SCContentFilter(display: display, excludingWindows: [])
             let configuration = SCStreamConfiguration()
             configuration.width = Int(display.width)
             configuration.height = Int(display.height)
+            configuration.captureResolution = .best
             
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-            let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
-            saveScreenshot(image: nsImage)
-            return nsImage
+            return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
         } catch {
-            print("Screen capture failed: \(error)")
-            hasScreenRecordingPermission = false
+            print("Failed to capture screen: \(error)")
             return nil
         }
     }
     
-    private func captureFullScreenLegacy() async -> NSImage? {
-        // For older macOS versions, use ScreenCaptureKit if available, otherwise return nil
-        guard let screen = NSScreen.main else { return nil }
-        
-        // Since CGWindowListCreateImage is deprecated, we'll just return nil
-        // This forces the app to use ScreenCaptureKit on modern systems
-        print("Legacy screen capture not available on this macOS version")
-        return nil
-    }
-    
     func captureWindow() async -> NSImage? {
+        // Implementation for window capture using ScreenCaptureKit
         guard hasScreenRecordingPermission else {
             checkScreenRecordingPermission()
             return nil
         }
         
-        if #available(macOS 12.3, *) {
-            return await captureWindowWithScreenCaptureKit()
-        } else {
-            return await captureWindowLegacy()
-        }
-    }
-    
-    @available(macOS 12.3, *)
-    private func captureWindowWithScreenCaptureKit() async -> NSImage? {
         do {
             let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
-            
-            // Get the frontmost window
-            guard let window = content.windows.first else { return nil }
+            guard let window = content.windows.first else { return await captureFullScreen() }
             
             let filter = SCContentFilter(desktopIndependentWindow: window)
             let configuration = SCStreamConfiguration()
-            configuration.width = Int(window.frame.width)
-            configuration.height = Int(window.frame.height)
+            configuration.captureResolution = .best
             
             let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
-            let nsImage = NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
-            saveScreenshot(image: nsImage)
-            return nsImage
+            return NSImage(cgImage: image, size: NSSize(width: image.width, height: image.height))
         } catch {
-            print("Window capture failed: \(error)")
+            print("Failed to capture window: \(error)")
+            return await captureFullScreen() // Fallback to full screen
+        }
+    }
+    
+    func captureSelection(rect: CGRect) async -> NSImage? {
+        guard let fullScreenImage = await captureFullScreen() else { return nil }
+        
+        // Crop the image to the selection rectangle
+        guard let cgImage = fullScreenImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return nil
         }
-    }
-    
-    private func captureWindowLegacy() async -> NSImage? {
-        // For older macOS versions, since CGWindowListCreateImage is deprecated,
-        // we'll return nil to force use of ScreenCaptureKit on modern systems
-        print("Legacy window capture not available on this macOS version")
-        return nil
-    }
-    
-    func captureSelection(rect: CGRect) async {
-        // For now, fall back to full screen capture and crop
-        guard let fullScreenImage = await captureFullScreen() else { return }
         
-        // Crop the image to the selection
-        guard let cgImage = fullScreenImage.cgImage(forProposedRect: nil, context: nil, hints: nil),
-              let croppedImage = cgImage.cropping(to: rect) else {
-            return
-        }
+        let croppedCGImage = cgImage.cropping(to: rect)
+        guard let croppedImage = croppedCGImage else { return nil }
         
-        let image = NSImage(cgImage: croppedImage, size: rect.size)
-        saveScreenshot(image: image)
+        return NSImage(cgImage: croppedImage, size: rect.size)
     }
     
+    func addScreenshot(_ image: NSImage) {
+        let timestamp = Date()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
+        let filename = "Screenshot-\(formatter.string(from: timestamp)).png"
+        
+        let screenshot = Screenshot(image: image, filename: filename)
+        screenshots.insert(screenshot, at: 0)
+    }
+    
+    func deleteScreenshot(_ screenshot: Screenshot) {
+        screenshots.removeAll { $0.id == screenshot.id }
+    }
+    
+    func deleteAllScreenshots() {
+        screenshots.removeAll()
+    }
+    
+    // Add timed capture functionality
     func captureWithTimer(seconds: Int, mode: CaptureMode) {
-        countdown = seconds
+        guard !isCapturing else { return }
+        
         isCapturing = true
+        countdown = seconds
         
         countdownTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] timer in
-            Task { @MainActor in
-                guard let self = self else {
-                    timer.invalidate()
-                    return
-                }
-                
+            guard let self = self else {
+                timer.invalidate()
+                return
+            }
+            
+            if self.countdown > 1 {
                 self.countdown -= 1
+            } else {
+                timer.invalidate()
+                self.countdown = 0
+                self.isCapturing = false
                 
-                if self.countdown <= 0 {
-                    timer.invalidate()
-                    self.isCapturing = false
-                    
+                // Perform the capture based on mode
+                Task {
+                    let image: NSImage?
                     switch mode {
                     case .fullScreen:
-                        _ = await self.captureFullScreen()
+                        image = await self.captureFullScreen()
                     case .window:
-                        _ = await self.captureWindow()
-                    default:
-                        break
+                        image = await self.captureWindow()
+                    case .selection:
+                        // For selection, we'll just do full screen as default
+                        image = await self.captureFullScreen()
+                    }
+                    
+                    if let capturedImage = image {
+                        self.addScreenshot(capturedImage)
                     }
                 }
             }
         }
     }
     
-    private func saveScreenshot(image: NSImage) {
-        let filename = "Screenshot_\(DateFormatter.filenameDateFormatter.string(from: Date())).png"
-        let screenshot = Screenshot(image: image, filename: filename)
-        screenshots.insert(screenshot, at: 0) // Insert at beginning for newest first
-        
-        // Save to Pictures/Screenz folder for better organization
-        saveToPicturesFolder(image: image, filename: screenshot.filename)
-    }
-    
-    private func saveToPicturesFolder(image: NSImage, filename: String) {
-        guard let picturesURL = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first else {
-            return
+    func saveScreenshotToDisk(_ screenshot: Screenshot, to url: URL) async throws {
+        guard let image = screenshot.image else {
+            throw ScreenshotError.invalidImage
         }
         
-        // Create Screenz folder in Pictures
-        let screenzURL = picturesURL.appendingPathComponent("Screenz")
-        try? FileManager.default.createDirectory(at: screenzURL, withIntermediateDirectories: true)
-        
-        let fileURL = screenzURL.appendingPathComponent(filename)
-        
-        if let tiffData = image.tiffRepresentation,
-           let bitmapRep = NSBitmapImageRep(data: tiffData),
-           let pngData = bitmapRep.representation(using: .png, properties: [:]) {
-            
-            try? pngData.write(to: fileURL)
+        guard let tiffData = image.tiffRepresentation,
+              let bitmapRep = NSBitmapImageRep(data: tiffData) else {
+            throw ScreenshotError.conversionFailed
         }
-    }
-    
-    func exportScreenshot(_ screenshot: Screenshot, format: ExportFormat, to url: URL) {
-        // Implementation for exporting in different formats
-        // This would handle PNG, JPG, PDF, TIFF exports
+        
+        let fileType: NSBitmapImageRep.FileType = url.pathExtension.lowercased() == "jpg" || url.pathExtension.lowercased() == "jpeg" ? .jpeg : .png
+        let properties: [NSBitmapImageRep.PropertyKey: Any] = fileType == .jpeg ? [.compressionFactor: 0.9] : [:]
+        
+        guard let imageData = bitmapRep.representation(using: fileType, properties: properties) else {
+            throw ScreenshotError.conversionFailed
+        }
+        
+        try imageData.write(to: url)
     }
 }
 
-enum ExportFormat: String, CaseIterable {
-    case png = "PNG"
-    case jpg = "JPG"
-    case pdf = "PDF"
-    case tiff = "TIFF"
+enum ScreenshotError: Error {
+    case invalidImage
+    case conversionFailed
+    case saveFailed
+    
+    var localizedDescription: String {
+        switch self {
+        case .invalidImage:
+            return "Invalid image data"
+        case .conversionFailed:
+            return "Failed to convert image"
+        case .saveFailed:
+            return "Failed to save image"
+        }
+    }
 }
 
 // MARK: - DateFormatter Extension

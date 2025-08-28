@@ -118,7 +118,7 @@ struct TextAnnotationView: View {
     }
 }
 
-// MARK: - Section Header
+// MARK: - Supporting UI Components
 struct SectionHeader: View {
     let title: String
     let icon: String
@@ -128,14 +128,13 @@ struct SectionHeader: View {
             Image(systemName: icon)
                 .foregroundColor(.blue)
             Text(title)
-                .font(.subheadline)
+                .font(.headline)
                 .fontWeight(.semibold)
             Spacer()
         }
     }
 }
 
-// MARK: - Tool Button
 struct ToolButton: View {
     let icon: String
     let title: String
@@ -149,37 +148,36 @@ struct ToolButton: View {
                     .font(.system(size: 16))
                 Text(title)
                     .font(.caption2)
-                    .lineLimit(1)
             }
-            .frame(maxWidth: .infinity, minHeight: 50)
             .foregroundColor(isSelected ? .white : .primary)
-            .background(isSelected ? .blue : .gray.opacity(0.1))
+            .padding(8)
+            .frame(maxWidth: .infinity)
+            .background(isSelected ? Color.blue : Color.gray.opacity(0.2))
             .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
     }
 }
 
-// MARK: - Color Selection Grid
 struct ColorSelectionGrid: View {
     @Binding var selectedColor: Color
     
     private let colors: [Color] = [
-        .red, .orange, .yellow, .green, .blue, .purple,
-        .pink, .brown, .indigo, .cyan, .mint, .gray,
-        .black, .white
+        .red, .orange, .yellow, .green, .mint, .teal,
+        .cyan, .blue, .indigo, .purple, .pink, .brown,
+        .black, .gray, .white
     ]
     
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 8) {
             ForEach(colors, id: \.self) { color in
                 Button(action: { selectedColor = color }) {
-                    Circle()
+                    RoundedRectangle(cornerRadius: 4)
                         .fill(color)
                         .frame(width: 24, height: 24)
                         .overlay(
-                            Circle()
-                                .stroke(selectedColor == color ? .blue : .gray.opacity(0.3), lineWidth: selectedColor == color ? 2 : 1)
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(selectedColor == color ? Color.blue : Color.clear, lineWidth: 2)
                         )
                 }
                 .buttonStyle(.plain)
@@ -188,33 +186,32 @@ struct ColorSelectionGrid: View {
     }
 }
 
-// MARK: - Background Selection Grid
 struct BackgroundSelectionGrid: View {
     @Binding var backgroundColor: Color
     
     private let backgroundColors: [Color] = [
-        .clear, .white, .black, .gray.opacity(0.1),
-        .blue, .pink, .green, .purple,
-        .yellow, .mint, .red, .indigo, .brown
+        .clear, .white, .black, .gray,
+        .red, .orange, .yellow, .green,
+        .blue, .purple, .pink, .mint,
+        .indigo, .brown
     ]
     
     var body: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 8) {
             ForEach(backgroundColors, id: \.self) { color in
                 Button(action: { backgroundColor = color }) {
-                    RoundedRectangle(cornerRadius: 6)
-                        .fill(color == .clear ? .white : color)
-                        .frame(height: 32)
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(color == .clear ? Color.white : color)
+                        .frame(width: 28, height: 28)
                         .overlay(
-                            RoundedRectangle(cornerRadius: 6)
-                                .stroke(backgroundColor == color ? .blue : .gray.opacity(0.3), lineWidth: backgroundColor == color ? 2 : 1)
+                            RoundedRectangle(cornerRadius: 4)
+                                .stroke(backgroundColor == color ? Color.blue : Color.gray.opacity(0.3), lineWidth: 2)
                         )
                         .overlay(
-                            // Special indicator for transparent background
                             color == .clear ?
-                            Text("None")
-                                .font(.caption2)
-                                .foregroundColor(.gray) : nil
+                            Image(systemName: "nosign")
+                                .foregroundColor(.red)
+                                .font(.caption) : nil
                         )
                 }
                 .buttonStyle(.plain)
@@ -223,272 +220,7 @@ struct BackgroundSelectionGrid: View {
     }
 }
 
-// MARK: - Screenshot Canvas
-struct ScreenshotCanvas: NSViewRepresentable {
-    let screenshot: Screenshot
-    let selectedTool: DrawingTool
-    let selectedColor: Color
-    let lineWidth: CGFloat
-    let scale: CGFloat
-    let offset: CGSize
-    @Binding var drawingStrokes: [DrawingStroke]
-    @Binding var currentStroke: [CGPoint]
-    let onTextTap: (CGPoint) -> Void
-    
-    func makeNSView(context: Context) -> CanvasNSView {
-        let canvasView = CanvasNSView()
-        canvasView.coordinator = context.coordinator
-        return canvasView
-    }
-    
-    func updateNSView(_ nsView: CanvasNSView, context: Context) {
-        nsView.screenshot = screenshot
-        nsView.selectedTool = selectedTool
-        nsView.selectedColor = NSColor(selectedColor)
-        nsView.lineWidth = lineWidth
-        nsView.drawingStrokes = drawingStrokes
-        nsView.currentStroke = currentStroke
-        nsView.onTextTap = onTextTap
-        nsView.needsDisplay = true
-    }
-    
-    func makeCoordinator() -> Coordinator {
-        Coordinator(self)
-    }
-    
-    class Coordinator: NSObject {
-        let parent: ScreenshotCanvas
-        
-        init(_ parent: ScreenshotCanvas) {
-            self.parent = parent
-        }
-    }
-}
-
-// MARK: - Canvas NSView
-class CanvasNSView: NSView {
-    var coordinator: ScreenshotCanvas.Coordinator?
-    var screenshot: Screenshot?
-    var selectedTool: DrawingTool = .pen
-    var selectedColor: NSColor = .red
-    var lineWidth: CGFloat = 3.0
-    var drawingStrokes: [DrawingStroke] = []
-    var currentStroke: [CGPoint] = []
-    var onTextTap: ((CGPoint) -> Void)?
-    
-    private var isDrawing = false
-    
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        
-        guard let context = NSGraphicsContext.current?.cgContext else { return }
-        
-        // Draw screenshot
-        if let image = screenshot?.image {
-            let imageRect = NSRect(origin: .zero, size: image.size)
-            image.draw(in: imageRect)
-        }
-        
-        // Draw completed strokes
-        for stroke in drawingStrokes {
-            drawStroke(stroke, in: context)
-        }
-        
-        // Draw current stroke in progress
-        if !currentStroke.isEmpty && selectedTool != .text {
-            let stroke = DrawingStroke(
-                tool: selectedTool,
-                points: currentStroke,
-                color: selectedColor,
-                lineWidth: lineWidth
-            )
-            drawStroke(stroke, in: context)
-        }
-    }
-    
-    private func drawStroke(_ stroke: DrawingStroke, in context: CGContext) {
-        context.saveGState()
-        
-        switch stroke.tool {
-        case .pen, .highlighter:
-            drawPenStroke(stroke, in: context)
-        case .arrow:
-            drawArrowStroke(stroke, in: context)
-        case .rectangle:
-            drawRectangleStroke(stroke, in: context)
-        case .ellipse:
-            drawEllipseStroke(stroke, in: context)
-        case .text:
-            drawTextStroke(stroke)
-        }
-        
-        context.restoreGState()
-    }
-    
-    private func drawPenStroke(_ stroke: DrawingStroke, in context: CGContext) {
-        guard stroke.points.count > 1 else { return }
-        
-        context.setStrokeColor(stroke.color.cgColor)
-        context.setLineWidth(stroke.lineWidth)
-        context.setLineCap(.round)
-        context.setLineJoin(.round)
-        
-        if stroke.tool == .highlighter {
-            context.setAlpha(0.5)
-        }
-        
-        context.beginPath()
-        context.move(to: stroke.points[0])
-        for point in stroke.points.dropFirst() {
-            context.addLine(to: point)
-        }
-        context.strokePath()
-        
-        if stroke.tool == .highlighter {
-            context.setAlpha(1.0)
-        }
-    }
-    
-    private func drawArrowStroke(_ stroke: DrawingStroke, in context: CGContext) {
-        guard stroke.points.count >= 2 else { return }
-        
-        let start = stroke.points.first!
-        let end = stroke.points.last!
-        
-        context.setStrokeColor(stroke.color.cgColor)
-        context.setLineWidth(stroke.lineWidth)
-        context.setLineCap(.round)
-        
-        // Draw line
-        context.beginPath()
-        context.move(to: start)
-        context.addLine(to: end)
-        context.strokePath()
-        
-        // Draw arrowhead
-        let angle = atan2(end.y - start.y, end.x - start.x)
-        let arrowLength: CGFloat = max(15, stroke.lineWidth * 3)
-        let arrowAngle: CGFloat = .pi / 6
-        
-        let arrowPoint1 = CGPoint(
-            x: end.x - arrowLength * cos(angle - arrowAngle),
-            y: end.y - arrowLength * sin(angle - arrowAngle)
-        )
-        let arrowPoint2 = CGPoint(
-            x: end.x - arrowLength * cos(angle + arrowAngle),
-            y: end.y - arrowLength * sin(angle + arrowAngle)
-        )
-        
-        context.beginPath()
-        context.move(to: end)
-        context.addLine(to: arrowPoint1)
-        context.move(to: end)
-        context.addLine(to: arrowPoint2)
-        context.strokePath()
-    }
-    
-    private func drawRectangleStroke(_ stroke: DrawingStroke, in context: CGContext) {
-        guard stroke.points.count >= 2 else { return }
-        
-        let start = stroke.points.first!
-        let end = stroke.points.last!
-        
-        let rect = CGRect(
-            x: min(start.x, end.x),
-            y: min(start.y, end.y),
-            width: abs(end.x - start.x),
-            height: abs(end.y - start.y)
-        )
-        
-        context.setStrokeColor(stroke.color.cgColor)
-        context.setLineWidth(stroke.lineWidth)
-        context.stroke(rect)
-    }
-    
-    private func drawEllipseStroke(_ stroke: DrawingStroke, in context: CGContext) {
-        guard stroke.points.count >= 2 else { return }
-        
-        let start = stroke.points.first!
-        let end = stroke.points.last!
-        
-        let rect = CGRect(
-            x: min(start.x, end.x),
-            y: min(start.y, end.y),
-            width: abs(end.x - start.x),
-            height: abs(end.y - start.y)
-        )
-        
-        context.setStrokeColor(stroke.color.cgColor)
-        context.setLineWidth(stroke.lineWidth)
-        context.strokeEllipse(in: rect)
-    }
-    
-    private func drawTextStroke(_ stroke: DrawingStroke) {
-        guard let text = stroke.text, let point = stroke.points.first else { return }
-        
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: max(12, stroke.lineWidth * 3)),
-            .foregroundColor: stroke.color
-        ]
-        
-        let attributedString = NSAttributedString(string: text, attributes: attributes)
-        attributedString.draw(at: point)
-    }
-    
-    override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        
-        if selectedTool == .text {
-            onTextTap?(point)
-            return
-        }
-        
-        isDrawing = true
-        currentStroke = [point]
-        needsDisplay = true
-    }
-    
-    override func mouseDragged(with event: NSEvent) {
-        guard isDrawing else { return }
-        
-        let point = convert(event.locationInWindow, from: nil)
-        
-        switch selectedTool {
-        case .pen, .highlighter:
-            currentStroke.append(point)
-        case .arrow, .rectangle, .ellipse:
-            if currentStroke.count >= 2 {
-                currentStroke[1] = point
-            } else {
-                currentStroke.append(point)
-            }
-        case .text:
-            break
-        }
-        
-        needsDisplay = true
-    }
-    
-    override func mouseUp(with event: NSEvent) {
-        guard isDrawing && !currentStroke.isEmpty else { return }
-        
-        isDrawing = false
-        
-        let stroke = DrawingStroke(
-            tool: selectedTool,
-            points: currentStroke,
-            color: selectedColor,
-            lineWidth: lineWidth
-        )
-        
-        coordinator?.parent.drawingStrokes.append(stroke)
-        coordinator?.parent.currentStroke = []
-        currentStroke = []
-        needsDisplay = true
-    }
-}
-
-// MARK: - Screenshot Canvas View (SwiftUI Canvas-based)
+// MARK: - Screenshot Canvas View
 struct ScreenshotCanvasView: View {
     let screenshot: Screenshot
     let selectedTool: DrawingTool
@@ -502,62 +234,58 @@ struct ScreenshotCanvasView: View {
     var body: some View {
         GeometryReader { geometry in
             ZStack {
-                // Draw the actual screenshot image
+                // Screenshot image
                 if let image = screenshot.image {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 
                 // Drawing overlay
                 Canvas { context, size in
-                    // Draw existing strokes
+                    // Draw completed strokes
                     for stroke in drawingStrokes {
-                        drawStroke(context: context, stroke: stroke)
+                        drawStroke(context: context, stroke: stroke, canvasSize: size)
                     }
                     
-                    // Draw current stroke being drawn
+                    // Draw current stroke
                     if !currentStroke.isEmpty {
                         let currentDrawingStroke = DrawingStroke(
                             tool: selectedTool,
                             points: currentStroke,
                             color: NSColor(selectedColor),
-                            lineWidth: lineWidth,
-                            text: nil
+                            lineWidth: lineWidth
                         )
-                        drawStroke(context: context, stroke: currentDrawingStroke)
+                        drawStroke(context: context, stroke: currentDrawingStroke, canvasSize: size)
                     }
                 }
-                .allowsHitTesting(true)
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { value in
+                            let point = value.location
+                            
                             if selectedTool == .text {
-                                onTextTap(value.location)
-                            } else if selectedTool == .rectangle || selectedTool == .ellipse || selectedTool == .arrow {
-                                // For shapes, we want to replace the current stroke with start and end points
-                                if currentStroke.isEmpty {
-                                    currentStroke.append(value.startLocation)
-                                }
-                                if currentStroke.count == 1 {
-                                    currentStroke.append(value.location)
-                                } else {
-                                    currentStroke[1] = value.location
-                                }
+                                return
+                            }
+                            
+                            if currentStroke.isEmpty {
+                                currentStroke.append(point)
                             } else {
-                                // For pen and highlighter, add continuous points
-                                currentStroke.append(value.location)
+                                currentStroke.append(point)
                             }
                         }
-                        .onEnded { _ in
-                            if !currentStroke.isEmpty && selectedTool != .text {
+                        .onEnded { value in
+                            if selectedTool == .text {
+                                onTextTap(value.location)
+                                return
+                            }
+                            
+                            if !currentStroke.isEmpty {
                                 let stroke = DrawingStroke(
                                     tool: selectedTool,
                                     points: currentStroke,
                                     color: NSColor(selectedColor),
-                                    lineWidth: lineWidth,
-                                    text: nil
+                                    lineWidth: lineWidth
                                 )
                                 drawingStrokes.append(stroke)
                                 currentStroke.removeAll()
@@ -568,7 +296,7 @@ struct ScreenshotCanvasView: View {
         }
     }
     
-    private func drawStroke(context: GraphicsContext, stroke: DrawingStroke) {
+    private func drawStroke(context: GraphicsContext, stroke: DrawingStroke, canvasSize: CGSize) {
         switch stroke.tool {
         case .pen, .highlighter:
             drawPenStroke(context: context, stroke: stroke)
@@ -592,22 +320,10 @@ struct ScreenshotCanvasView: View {
             path.addLine(to: point)
         }
         
-        let strokeStyle = StrokeStyle(
-            lineWidth: stroke.lineWidth,
-            lineCap: .round,
-            lineJoin: .round
-        )
+        let color = Color(stroke.color)
+        let strokeColor = stroke.tool == .highlighter ? color.opacity(0.5) : color
         
-        var strokeColor = Color(stroke.color)
-        if stroke.tool == .highlighter {
-            strokeColor = strokeColor.opacity(0.5)
-        }
-        
-        context.stroke(
-            path,
-            with: .color(strokeColor),
-            style: strokeStyle
-        )
+        context.stroke(path, with: .color(strokeColor), lineWidth: stroke.lineWidth)
     }
     
     private func drawArrow(context: GraphicsContext, stroke: DrawingStroke) {
@@ -620,7 +336,9 @@ struct ScreenshotCanvasView: View {
         path.move(to: start)
         path.addLine(to: end)
         
-        // Add arrowhead
+        context.stroke(path, with: .color(Color(stroke.color)), lineWidth: stroke.lineWidth)
+        
+        // Draw arrowhead
         let angle = atan2(end.y - start.y, end.x - start.x)
         let arrowLength: CGFloat = max(15, stroke.lineWidth * 3)
         let arrowAngle: CGFloat = .pi / 6
@@ -634,16 +352,13 @@ struct ScreenshotCanvasView: View {
             y: end.y - arrowLength * sin(angle + arrowAngle)
         )
         
-        path.move(to: end)
-        path.addLine(to: arrowPoint1)
-        path.move(to: end)
-        path.addLine(to: arrowPoint2)
+        var arrowPath = Path()
+        arrowPath.move(to: end)
+        arrowPath.addLine(to: arrowPoint1)
+        arrowPath.move(to: end)
+        arrowPath.addLine(to: arrowPoint2)
         
-        context.stroke(
-            path,
-            with: .color(Color(stroke.color)),
-            style: StrokeStyle(lineWidth: stroke.lineWidth, lineCap: .round)
-        )
+        context.stroke(arrowPath, with: .color(Color(stroke.color)), lineWidth: stroke.lineWidth)
     }
     
     private func drawRectangle(context: GraphicsContext, stroke: DrawingStroke) {
@@ -659,11 +374,8 @@ struct ScreenshotCanvasView: View {
             height: abs(end.y - start.y)
         )
         
-        context.stroke(
-            Path(rect),
-            with: .color(Color(stroke.color)),
-            style: StrokeStyle(lineWidth: stroke.lineWidth)
-        )
+        let path = Path(rect)
+        context.stroke(path, with: .color(Color(stroke.color)), lineWidth: stroke.lineWidth)
     }
     
     private func drawEllipse(context: GraphicsContext, stroke: DrawingStroke) {
@@ -679,21 +391,18 @@ struct ScreenshotCanvasView: View {
             height: abs(end.y - start.y)
         )
         
-        context.stroke(
-            Path(ellipseIn: rect),
-            with: .color(Color(stroke.color)),
-            style: StrokeStyle(lineWidth: stroke.lineWidth)
-        )
+        let path = Path(ellipseIn: rect)
+        context.stroke(path, with: .color(Color(stroke.color)), lineWidth: stroke.lineWidth)
     }
     
     private func drawText(context: GraphicsContext, stroke: DrawingStroke) {
         guard let text = stroke.text, let point = stroke.points.first else { return }
         
+        let fontSize = max(12, stroke.lineWidth * 3)
         context.draw(
             Text(text)
-                .font(.system(size: max(12, stroke.lineWidth * 3)))
-                .foregroundColor(Color(stroke.color))
-                .bold(),
+                .font(.system(size: fontSize))
+                .foregroundColor(Color(stroke.color)),
             at: point,
             anchor: .topLeading
         )

@@ -347,7 +347,10 @@ struct ScreenshotEditorView: View {
     
     private func saveEditedScreenshot() {
         // Create a new image with the editing applied
-        guard let originalImage = screenshot.image else { return }
+        guard let originalImage = screenshot.image else {
+            print("Error: No original image found")
+            return
+        }
         
         let size = originalImage.size
         let image = NSImage(size: size)
@@ -370,28 +373,72 @@ struct ScreenshotEditorView: View {
         
         image.unlockFocus()
         
-        // Save the edited screenshot
-        let editedScreenshot = Screenshot(image: image, filename: "Edited-\(screenshot.filename)")
+        // Create timestamp for filename
+        let timestamp = Date()
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let editedFilename = "Edited_\(formatter.string(from: timestamp)).png"
+        
+        // Save the edited screenshot using the service's addScreenshot method
+        let editedScreenshot = Screenshot(image: image, filename: editedFilename)
         screenshotService.screenshots.insert(editedScreenshot, at: 0)
         
+        print("Saved edited screenshot: \(editedFilename)")
         dismiss()
     }
     
     private func exportScreenshot() {
-        // Implementation for exporting in different formats
+        guard let originalImage = screenshot.image else {
+            print("No image to export")
+            return
+        }
+        
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png, .jpeg]
         panel.nameFieldStringValue = screenshot.filename
+        panel.canCreateDirectories = true
         
-        panel.begin { result in
+        Task { @MainActor in
+            let result = await panel.begin()
             if result == .OK, let url = panel.url {
-                saveImageToURL(url: url)
+                // Create the edited image and convert to data on main thread
+                guard let editedImage = createEditedImage(),
+                      let tiffData = editedImage.tiffRepresentation,
+                      let bitmapRep = NSBitmapImageRep(data: tiffData) else {
+                    print("Failed to prepare image for export")
+                    return
+                }
+                
+                // Determine file type and properties
+                let fileType: NSBitmapImageRep.FileType = url.pathExtension.lowercased() == "jpg" || url.pathExtension.lowercased() == "jpeg" ? .jpeg : .png
+                let properties: [NSBitmapImageRep.PropertyKey: Any] = fileType == .jpeg ? [.compressionFactor: 0.9] : [:]
+                
+                guard let imageData = bitmapRep.representation(using: fileType, properties: properties) else {
+                    print("Failed to convert image to data")
+                    return
+                }
+                
+                // Move to background for file operations with sendable data
+                Task.detached {
+                    do {
+                        try imageData.write(to: url)
+                        
+                        await MainActor.run {
+                            print("Successfully exported to: \(url.path)")
+                        }
+                    } catch {
+                        await MainActor.run {
+                            print("Export failed: \(error.localizedDescription)")
+                        }
+                    }
+                }
             }
         }
     }
     
-    private func saveImageToURL(url: URL) {
-        guard let originalImage = screenshot.image else { return }
+    // Helper function to create edited image without async issues
+    private func createEditedImage() -> NSImage? {
+        guard let originalImage = screenshot.image else { return nil }
         
         let size = originalImage.size
         let image = NSImage(size: size)
@@ -407,40 +454,54 @@ struct ScreenshotEditorView: View {
         // Draw original image
         originalImage.draw(in: NSRect(origin: .zero, size: size))
         
-        // Draw strokes using NSImage drawing methods
+        // Draw strokes
         for stroke in drawingStrokes {
-            drawStrokeOnNSImage(stroke: stroke, size: size)
+            drawStrokeOnContext(stroke: stroke, size: size)
         }
         
         image.unlockFocus()
         
-        if let tiffData = image.tiffRepresentation,
-           let bitmapRep = NSBitmapImageRep(data: tiffData) {
-            
-            let fileType: NSBitmapImageRep.FileType = url.pathExtension.lowercased() == "jpg" ? .jpeg : .png
-            if let imageData = bitmapRep.representation(using: fileType, properties: [:]) {
-                try? imageData.write(to: url)
-            }
-        }
+        return image
     }
     
-    // New method for drawing strokes when exporting
-    private func drawStrokeOnNSImage(stroke: DrawingStroke, size: CGSize) {
+    // Helper function to save image asynchronously
+    private func saveEditedImageToURL(_ image: NSImage?, url: URL) async throws {
+        guard let image = image else {
+            throw ScreenshotError.invalidImage
+        }
+        
+        guard let tiffData = image.tiffRepresentation,
+              let bitmapRep = NSBitmapImageRep(data: tiffData) else {
+            throw ScreenshotError.conversionFailed
+        }
+        
+        let fileType: NSBitmapImageRep.FileType = url.pathExtension.lowercased() == "jpg" || url.pathExtension.lowercased() == "jpeg" ? .jpeg : .png
+        let properties: [NSBitmapImageRep.PropertyKey: Any] = fileType == .jpeg ? [.compressionFactor: 0.9] : [:]
+        
+        guard let imageData = bitmapRep.representation(using: fileType, properties: properties) else {
+            throw ScreenshotError.conversionFailed
+        }
+        
+        try imageData.write(to: url)
+    }
+    
+    // Complete implementation of drawStrokeOnContext for both save and export
+    private func drawStrokeOnContext(stroke: DrawingStroke, size: CGSize) {
         switch stroke.tool {
         case .pen, .highlighter:
-            drawPenStrokeOnNSImage(stroke: stroke)
+            drawPenStrokeOnContext(stroke: stroke)
         case .arrow:
-            drawArrowOnNSImage(stroke: stroke)
+            drawArrowOnContext(stroke: stroke)
         case .rectangle:
-            drawRectangleOnNSImage(stroke: stroke)
+            drawRectangleOnContext(stroke: stroke)
         case .ellipse:
-            drawEllipseOnNSImage(stroke: stroke)
+            drawEllipseOnContext(stroke: stroke)
         case .text:
-            drawTextOnNSImage(stroke: stroke)
+            drawTextOnContext(stroke: stroke)
         }
     }
     
-    private func drawPenStrokeOnNSImage(stroke: DrawingStroke) {
+    private func drawPenStrokeOnContext(stroke: DrawingStroke) {
         guard stroke.points.count > 1 else { return }
         
         let path = NSBezierPath()
@@ -453,14 +514,15 @@ struct ScreenshotEditorView: View {
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
         
-        stroke.color.setStroke()
         if stroke.tool == .highlighter {
             stroke.color.withAlphaComponent(0.5).setStroke()
+        } else {
+            stroke.color.setStroke()
         }
         path.stroke()
     }
     
-    private func drawArrowOnNSImage(stroke: DrawingStroke) {
+    private func drawArrowOnContext(stroke: DrawingStroke) {
         guard stroke.points.count >= 2 else { return }
         
         let start = stroke.points.first!
@@ -501,7 +563,7 @@ struct ScreenshotEditorView: View {
         arrowPath.stroke()
     }
     
-    private func drawRectangleOnNSImage(stroke: DrawingStroke) {
+    private func drawRectangleOnContext(stroke: DrawingStroke) {
         guard stroke.points.count >= 2 else { return }
         
         let start = stroke.points.first!
@@ -521,7 +583,7 @@ struct ScreenshotEditorView: View {
         path.stroke()
     }
     
-    private func drawEllipseOnNSImage(stroke: DrawingStroke) {
+    private func drawEllipseOnContext(stroke: DrawingStroke) {
         guard stroke.points.count >= 2 else { return }
         
         let start = stroke.points.first!
@@ -541,139 +603,12 @@ struct ScreenshotEditorView: View {
         path.stroke()
     }
     
-    private func drawTextOnNSImage(stroke: DrawingStroke) {
+    private func drawTextOnContext(stroke: DrawingStroke) {
         guard let text = stroke.text, let point = stroke.points.first else { return }
         
+        let fontSize = max(12, stroke.lineWidth * 3)
         let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: max(12, stroke.lineWidth * 3)),
-            .foregroundColor: stroke.color
-        ]
-        
-        let attributedString = NSAttributedString(string: text, attributes: attributes)
-        attributedString.draw(at: point)
-    }
-    
-    // Keep the existing drawStrokeOnContext for the canvas display
-    private func drawStrokeOnContext(stroke: DrawingStroke, size: CGSize) {
-        let context = NSGraphicsContext.current?.cgContext
-        
-        switch stroke.tool {
-        case .pen, .highlighter:
-            drawPenStroke(stroke: stroke, context: context)
-        case .arrow:
-            drawArrow(stroke: stroke, context: context)
-        case .rectangle:
-            drawRectangle(stroke: stroke, context: context)
-        case .ellipse:
-            drawEllipse(stroke: stroke, context: context)
-        case .text:
-            drawText(stroke: stroke, size: size)
-        }
-    }
-    
-    private func drawPenStroke(stroke: DrawingStroke, context: CGContext?) {
-        guard let context = context, stroke.points.count > 1 else { return }
-        
-        context.setStrokeColor(stroke.color.cgColor)
-        context.setLineWidth(stroke.lineWidth)
-        context.setLineCap(.round)
-        context.setLineJoin(.round)
-        
-        if stroke.tool == .highlighter {
-            context.setAlpha(0.5)
-        }
-        
-        context.beginPath()
-        context.move(to: stroke.points[0])
-        for point in stroke.points.dropFirst() {
-            context.addLine(to: point)
-        }
-        context.strokePath()
-        
-        if stroke.tool == .highlighter {
-            context.setAlpha(1.0)
-        }
-    }
-    
-    private func drawArrow(stroke: DrawingStroke, context: CGContext?) {
-        guard let context = context, stroke.points.count >= 2 else { return }
-        
-        let start = stroke.points.first!
-        let end = stroke.points.last!
-        
-        context.setStrokeColor(stroke.color.cgColor)
-        context.setLineWidth(stroke.lineWidth)
-        context.setLineCap(.round)
-        
-        // Draw line
-        context.beginPath()
-        context.move(to: start)
-        context.addLine(to: end)
-        context.strokePath()
-        
-        // Draw arrowhead
-        let angle = atan2(end.y - start.y, end.x - start.x)
-        let arrowLength: CGFloat = 20
-        let arrowAngle: CGFloat = .pi / 6
-        
-        let arrowPoint1 = CGPoint(
-            x: end.x - arrowLength * cos(angle - arrowAngle),
-            y: end.y - arrowLength * sin(angle - arrowAngle)
-        )
-        let arrowPoint2 = CGPoint(
-            x: end.x - arrowLength * cos(angle + arrowAngle),
-            y: end.y - arrowLength * sin(angle + arrowAngle)
-        )
-        
-        context.beginPath()
-        context.move(to: end)
-        context.addLine(to: arrowPoint1)
-        context.move(to: end)
-        context.addLine(to: arrowPoint2)
-        context.strokePath()
-    }
-    
-    private func drawRectangle(stroke: DrawingStroke, context: CGContext?) {
-        guard let context = context, stroke.points.count >= 2 else { return }
-        
-        let start = stroke.points.first!
-        let end = stroke.points.last!
-        
-        let rect = CGRect(
-            x: min(start.x, end.x),
-            y: min(start.y, end.y),
-            width: abs(end.x - start.x),
-            height: abs(end.y - start.y)
-        )
-        
-        context.setStrokeColor(stroke.color.cgColor)
-        context.setLineWidth(stroke.lineWidth)
-        context.stroke(rect)
-    }
-    
-    private func drawEllipse(stroke: DrawingStroke, context: CGContext?) {
-        guard let context = context, stroke.points.count >= 2 else { return }
-        
-        let start = stroke.points.first!
-        let end = stroke.points.last!
-        
-        let rect = CGRect(
-            x: min(start.x, end.x),
-            y: min(start.y, end.y),
-            width: abs(end.x - start.x),
-            height: abs(end.y - start.y)
-        )
-        
-        context.setStrokeColor(stroke.color.cgColor)
-        context.setLineWidth(stroke.lineWidth)
-        context.strokeEllipse(in: rect)
-    }
-    
-    private func drawText(stroke: DrawingStroke, size: CGSize) {
-        guard let text = stroke.text, let point = stroke.points.first else { return }
-        
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: stroke.lineWidth * 4),
+            .font: NSFont.systemFont(ofSize: fontSize),
             .foregroundColor: stroke.color
         ]
         
