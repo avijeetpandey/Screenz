@@ -26,27 +26,51 @@ struct ScreenshotEditorView: View {
     @State private var textPosition: CGPoint = .zero
     @State private var backgroundColor: Color = .clear
     
+    // Helper to get the current background option with gradient support
+    private var currentBackgroundFill: AnyView {
+        // Find matching gradient option
+        let gradientOptions: [(Color, LinearGradient)] = [
+            (.blue, LinearGradient(colors: [.blue.opacity(0.7), .purple.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)),
+            (.pink, LinearGradient(colors: [.pink.opacity(0.6), .orange.opacity(0.6)], startPoint: .leading, endPoint: .trailing)),
+            (.green, LinearGradient(colors: [.green.opacity(0.5), .blue.opacity(0.5)], startPoint: .top, endPoint: .bottom)),
+            (.purple, LinearGradient(colors: [.purple.opacity(0.4), .pink.opacity(0.4), .orange.opacity(0.4)], startPoint: .topLeading, endPoint: .bottomTrailing)),
+            (.yellow, LinearGradient(colors: [.yellow.opacity(0.3), .orange.opacity(0.4)], startPoint: .top, endPoint: .bottom)),
+            (.mint, LinearGradient(colors: [.mint.opacity(0.4), .cyan.opacity(0.4)], startPoint: .leading, endPoint: .trailing)),
+            (.red, LinearGradient(colors: [.red.opacity(0.3), .pink.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing)),
+            (.indigo, LinearGradient(colors: [.indigo.opacity(0.5), .blue.opacity(0.5), .cyan.opacity(0.3)], startPoint: .top, endPoint: .bottom)),
+            (.brown, LinearGradient(colors: [.brown.opacity(0.3), .orange.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing))
+        ]
+        
+        // Check if current background color matches a gradient option
+        if let gradientMatch = gradientOptions.first(where: { $0.0 == backgroundColor }) {
+            return AnyView(gradientMatch.1)
+        } else if backgroundColor != .clear {
+            return AnyView(backgroundColor)
+        } else {
+            return AnyView(Color.clear)
+        }
+    }
+    
     var body: some View {
         HSplitView {
             // Left side - Image Canvas
             ZStack {
-                // Background
+                // Enhanced Background with gradient support
                 if backgroundColor != .clear {
-                    Rectangle()
-                        .fill(backgroundColor.gradient)
+                    currentBackgroundFill
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 } else {
-                    Rectangle()
-                        .fill(.white)
+                    Color.white
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
                 
                 // Screenshot canvas with drawing
-                ScreenshotCanvas(
+                ScreenshotCanvasView(
                     screenshot: screenshot,
                     selectedTool: selectedTool,
                     selectedColor: selectedColor,
                     lineWidth: lineWidth,
-                    scale: canvasScale,
-                    offset: canvasOffset,
+                    backgroundColor: backgroundColor,
                     drawingStrokes: $drawingStrokes,
                     currentStroke: $currentStroke,
                     onTextTap: { position in
@@ -374,15 +398,18 @@ struct ScreenshotEditorView: View {
         
         image.lockFocus()
         
+        // Draw background if set
         if backgroundColor != .clear {
             NSColor(backgroundColor).setFill()
             NSRect(origin: .zero, size: size).fill()
         }
         
+        // Draw original image
         originalImage.draw(in: NSRect(origin: .zero, size: size))
         
+        // Draw strokes using NSImage drawing methods
         for stroke in drawingStrokes {
-            drawStrokeOnContext(stroke: stroke, size: size)
+            drawStrokeOnNSImage(stroke: stroke, size: size)
         }
         
         image.unlockFocus()
@@ -397,6 +424,136 @@ struct ScreenshotEditorView: View {
         }
     }
     
+    // New method for drawing strokes when exporting
+    private func drawStrokeOnNSImage(stroke: DrawingStroke, size: CGSize) {
+        switch stroke.tool {
+        case .pen, .highlighter:
+            drawPenStrokeOnNSImage(stroke: stroke)
+        case .arrow:
+            drawArrowOnNSImage(stroke: stroke)
+        case .rectangle:
+            drawRectangleOnNSImage(stroke: stroke)
+        case .ellipse:
+            drawEllipseOnNSImage(stroke: stroke)
+        case .text:
+            drawTextOnNSImage(stroke: stroke)
+        }
+    }
+    
+    private func drawPenStrokeOnNSImage(stroke: DrawingStroke) {
+        guard stroke.points.count > 1 else { return }
+        
+        let path = NSBezierPath()
+        path.move(to: stroke.points[0])
+        for point in stroke.points.dropFirst() {
+            path.line(to: point)
+        }
+        
+        path.lineWidth = stroke.lineWidth
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        
+        stroke.color.setStroke()
+        if stroke.tool == .highlighter {
+            stroke.color.withAlphaComponent(0.5).setStroke()
+        }
+        path.stroke()
+    }
+    
+    private func drawArrowOnNSImage(stroke: DrawingStroke) {
+        guard stroke.points.count >= 2 else { return }
+        
+        let start = stroke.points.first!
+        let end = stroke.points.last!
+        
+        let path = NSBezierPath()
+        path.move(to: start)
+        path.line(to: end)
+        path.lineWidth = stroke.lineWidth
+        path.lineCapStyle = .round
+        
+        stroke.color.setStroke()
+        path.stroke()
+        
+        // Draw arrowhead
+        let angle = atan2(end.y - start.y, end.x - start.x)
+        let arrowLength: CGFloat = max(15, stroke.lineWidth * 3)
+        let arrowAngle: CGFloat = .pi / 6
+        
+        let arrowPoint1 = CGPoint(
+            x: end.x - arrowLength * cos(angle - arrowAngle),
+            y: end.y - arrowLength * sin(angle - arrowAngle)
+        )
+        let arrowPoint2 = CGPoint(
+            x: end.x - arrowLength * cos(angle + arrowAngle),
+            y: end.y - arrowLength * sin(angle + arrowAngle)
+        )
+        
+        let arrowPath = NSBezierPath()
+        arrowPath.move(to: end)
+        arrowPath.line(to: arrowPoint1)
+        arrowPath.move(to: end)
+        arrowPath.line(to: arrowPoint2)
+        arrowPath.lineWidth = stroke.lineWidth
+        arrowPath.lineCapStyle = .round
+        
+        stroke.color.setStroke()
+        arrowPath.stroke()
+    }
+    
+    private func drawRectangleOnNSImage(stroke: DrawingStroke) {
+        guard stroke.points.count >= 2 else { return }
+        
+        let start = stroke.points.first!
+        let end = stroke.points.last!
+        
+        let rect = NSRect(
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(end.x - start.x),
+            height: abs(end.y - start.y)
+        )
+        
+        let path = NSBezierPath(rect: rect)
+        path.lineWidth = stroke.lineWidth
+        
+        stroke.color.setStroke()
+        path.stroke()
+    }
+    
+    private func drawEllipseOnNSImage(stroke: DrawingStroke) {
+        guard stroke.points.count >= 2 else { return }
+        
+        let start = stroke.points.first!
+        let end = stroke.points.last!
+        
+        let rect = NSRect(
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(end.x - start.x),
+            height: abs(end.y - start.y)
+        )
+        
+        let path = NSBezierPath(ovalIn: rect)
+        path.lineWidth = stroke.lineWidth
+        
+        stroke.color.setStroke()
+        path.stroke()
+    }
+    
+    private func drawTextOnNSImage(stroke: DrawingStroke) {
+        guard let text = stroke.text, let point = stroke.points.first else { return }
+        
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: max(12, stroke.lineWidth * 3)),
+            .foregroundColor: stroke.color
+        ]
+        
+        let attributedString = NSAttributedString(string: text, attributes: attributes)
+        attributedString.draw(at: point)
+    }
+    
+    // Keep the existing drawStrokeOnContext for the canvas display
     private func drawStrokeOnContext(stroke: DrawingStroke, size: CGSize) {
         let context = NSGraphicsContext.current?.cgContext
         
@@ -522,217 +679,5 @@ struct ScreenshotEditorView: View {
         
         let attributedString = NSAttributedString(string: text, attributes: attributes)
         attributedString.draw(at: point)
-    }
-}
-
-struct ScreenshotCanvas: View {
-    let screenshot: Screenshot
-    let selectedTool: DrawingTool
-    let selectedColor: Color
-    let lineWidth: CGFloat
-    let scale: CGFloat
-    let offset: CGSize
-    @Binding var drawingStrokes: [DrawingStroke]
-    @Binding var currentStroke: [CGPoint]
-    let onTextTap: (CGPoint) -> Void
-    
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                // Draw the actual screenshot image
-                if let image = screenshot.image {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-                
-                // Drawing overlay
-                Canvas { context, size in
-                    // Draw existing strokes
-                    for stroke in drawingStrokes {
-                        drawStroke(context: context, stroke: stroke)
-                    }
-                    
-                    // Draw current stroke being drawn
-                    if !currentStroke.isEmpty {
-                        let currentDrawingStroke = DrawingStroke(
-                            tool: selectedTool,
-                            points: currentStroke,
-                            color: NSColor(selectedColor),
-                            lineWidth: lineWidth,
-                            text: nil
-                        )
-                        drawStroke(context: context, stroke: currentDrawingStroke)
-                    }
-                }
-                .allowsHitTesting(true)
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .onChanged { value in
-                            if selectedTool == .text {
-                                onTextTap(value.location)
-                            } else if selectedTool == .rectangle || selectedTool == .ellipse || selectedTool == .arrow {
-                                // For shapes, we want to replace the current stroke with start and end points
-                                if currentStroke.isEmpty {
-                                    currentStroke.append(value.startLocation)
-                                }
-                                if currentStroke.count == 1 {
-                                    currentStroke.append(value.location)
-                                } else {
-                                    currentStroke[1] = value.location
-                                }
-                            } else {
-                                // For pen and highlighter, add continuous points
-                                currentStroke.append(value.location)
-                            }
-                        }
-                        .onEnded { _ in
-                            if !currentStroke.isEmpty && selectedTool != .text {
-                                let stroke = DrawingStroke(
-                                    tool: selectedTool,
-                                    points: currentStroke,
-                                    color: NSColor(selectedColor),
-                                    lineWidth: lineWidth,
-                                    text: nil
-                                )
-                                drawingStrokes.append(stroke)
-                                currentStroke.removeAll()
-                            }
-                        }
-                )
-            }
-        }
-    }
-    
-    private func drawStroke(context: GraphicsContext, stroke: DrawingStroke) {
-        switch stroke.tool {
-        case .pen, .highlighter:
-            drawPenStroke(context: context, stroke: stroke)
-        case .arrow:
-            drawArrow(context: context, stroke: stroke)
-        case .rectangle:
-            drawRectangle(context: context, stroke: stroke)
-        case .ellipse:
-            drawEllipse(context: context, stroke: stroke)
-        case .text:
-            drawText(context: context, stroke: stroke)
-        }
-    }
-    
-    private func drawPenStroke(context: GraphicsContext, stroke: DrawingStroke) {
-        guard stroke.points.count > 1 else { return }
-        
-        var path = Path()
-        path.move(to: stroke.points[0])
-        for point in stroke.points.dropFirst() {
-            path.addLine(to: point)
-        }
-        
-        let strokeStyle = StrokeStyle(
-            lineWidth: stroke.lineWidth,
-            lineCap: .round,
-            lineJoin: .round
-        )
-        
-        var strokeColor = Color(stroke.color)
-        if stroke.tool == .highlighter {
-            strokeColor = strokeColor.opacity(0.5)
-        }
-        
-        context.stroke(
-            path,
-            with: .color(strokeColor),
-            style: strokeStyle
-        )
-    }
-    
-    private func drawArrow(context: GraphicsContext, stroke: DrawingStroke) {
-        guard stroke.points.count >= 2 else { return }
-        
-        let start = stroke.points.first!
-        let end = stroke.points.last!
-        
-        var path = Path()
-        path.move(to: start)
-        path.addLine(to: end)
-        
-        // Add arrowhead
-        let angle = atan2(end.y - start.y, end.x - start.x)
-        let arrowLength: CGFloat = max(15, stroke.lineWidth * 3)
-        let arrowAngle: CGFloat = .pi / 6
-        
-        let arrowPoint1 = CGPoint(
-            x: end.x - arrowLength * cos(angle - arrowAngle),
-            y: end.y - arrowLength * sin(angle - arrowAngle)
-        )
-        let arrowPoint2 = CGPoint(
-            x: end.x - arrowLength * cos(angle + arrowAngle),
-            y: end.y - arrowLength * sin(angle + arrowAngle)
-        )
-        
-        path.move(to: end)
-        path.addLine(to: arrowPoint1)
-        path.move(to: end)
-        path.addLine(to: arrowPoint2)
-        
-        context.stroke(
-            path,
-            with: .color(Color(stroke.color)),
-            style: StrokeStyle(lineWidth: stroke.lineWidth, lineCap: .round)
-        )
-    }
-    
-    private func drawRectangle(context: GraphicsContext, stroke: DrawingStroke) {
-        guard stroke.points.count >= 2 else { return }
-        
-        let start = stroke.points.first!
-        let end = stroke.points.last!
-        
-        let rect = CGRect(
-            x: min(start.x, end.x),
-            y: min(start.y, end.y),
-            width: abs(end.x - start.x),
-            height: abs(end.y - start.y)
-        )
-        
-        context.stroke(
-            Path(rect),
-            with: .color(Color(stroke.color)),
-            style: StrokeStyle(lineWidth: stroke.lineWidth)
-        )
-    }
-    
-    private func drawEllipse(context: GraphicsContext, stroke: DrawingStroke) {
-        guard stroke.points.count >= 2 else { return }
-        
-        let start = stroke.points.first!
-        let end = stroke.points.last!
-        
-        let rect = CGRect(
-            x: min(start.x, end.x),
-            y: min(start.y, end.y),
-            width: abs(end.x - start.x),
-            height: abs(end.y - start.y)
-        )
-        
-        context.stroke(
-            Path(ellipseIn: rect),
-            with: .color(Color(stroke.color)),
-            style: StrokeStyle(lineWidth: stroke.lineWidth)
-        )
-    }
-    
-    private func drawText(context: GraphicsContext, stroke: DrawingStroke) {
-        guard let text = stroke.text, let point = stroke.points.first else { return }
-        
-        context.draw(
-            Text(text)
-                .font(.system(size: max(12, stroke.lineWidth * 3)))
-                .foregroundColor(Color(stroke.color))
-                .bold(),
-            at: point,
-            anchor: .topLeading
-        )
     }
 }

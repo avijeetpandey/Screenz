@@ -102,170 +102,19 @@ struct TextAnnotationView: View {
                 }
                 .buttonStyle(.bordered)
                 
-                Button("Add Text") {
-                    onSave(text)
+                Button("Add") {
+                    if !text.isEmpty {
+                        onSave(text)
+                        text = ""
+                    }
                     dismiss()
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(text.isEmpty)
             }
         }
-        .padding(20)
-        .frame(width: 350, height: 150)
-    }
-}
-
-// MARK: - Color Picker View
-struct ColorPickerView: View {
-    @Binding var selectedColor: Color
-    @Environment(\.dismiss) private var dismiss
-    
-    private let predefinedColors: [Color] = [
-        .red, .orange, .yellow, .green, .blue, .purple, .pink,
-        .black, .gray, .white, .brown, .cyan, .mint, .indigo
-    ]
-    
-    var body: some View {
-        VStack(spacing: 20) {
-            Text("Choose Color")
-                .font(.headline)
-            
-            // Predefined colors grid
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
-                ForEach(predefinedColors, id: \.self) { color in
-                    ColorCircleView(
-                        color: color,
-                        isSelected: selectedColor == color,
-                        onTap: { selectedColor = color }
-                    )
-                }
-            }
-            
-            Divider()
-            
-            // Custom color picker
-            ColorPicker("Custom Color", selection: $selectedColor)
-                .labelsHidden()
-            
-            HStack {
-                Button("Cancel") {
-                    dismiss()
-                }
-                .buttonStyle(.bordered)
-                
-                Button("Select") {
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
-            }
-        }
-        .padding(20)
-        .frame(width: 350, height: 300)
-    }
-}
-
-// MARK: - Color Circle View
-struct ColorCircleView: View {
-    let color: Color
-    let isSelected: Bool
-    let onTap: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            Circle()
-                .fill(color)
-                .frame(width: 30, height: 30)
-                .overlay(
-                    Circle()
-                        .stroke(isSelected ? Color.primary : Color.secondary, lineWidth: isSelected ? 3 : 1)
-                )
-                .overlay(
-                    // Add checkmark for selected color
-                    isSelected ?
-                    Image(systemName: "checkmark")
-                        .foregroundColor(color == .white || color == .yellow ? .black : .white)
-                        .font(.caption.bold()) : nil
-                )
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - Background Options View
-struct BackgroundOptionsView: View {
-    @Binding var backgroundColor: Color
-    @Environment(\.dismiss) private var dismiss
-    
-    private let predefinedBackgrounds: [Color] = [
-        .clear, .white, .black, .gray, .red, .blue, .green, .purple, .orange, .yellow
-    ]
-    
-    var body: some View {
-        VStack(spacing: 20) {
-            Text("Background Options")
-                .font(.headline)
-            
-            // Background options grid
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 8) {
-                ForEach(predefinedBackgrounds, id: \.self) { color in
-                    BackgroundOptionTile(
-                        color: color,
-                        isSelected: backgroundColor == color,
-                        onTap: { backgroundColor = color }
-                    )
-                }
-            }
-            
-            Divider()
-            
-            // Custom background color
-            if backgroundColor != .clear {
-                ColorPicker("Custom Background", selection: $backgroundColor)
-            }
-            
-            HStack {
-                Button("Cancel") {
-                    dismiss()
-                }
-                .buttonStyle(.bordered)
-                
-                Button("Apply") {
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
-            }
-        }
-        .padding(20)
-        .frame(width: 350, height: 300)
-    }
-}
-
-struct BackgroundOptionTile: View {
-    let color: Color
-    let isSelected: Bool
-    let onTap: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            Rectangle()
-                .fill(color == .clear ?
-                      Color.white.opacity(0.1) :
-                      color)
-                .frame(width: 50, height: 40)
-                .overlay(
-                    color == .clear ?
-                    Text("None")
-                        .font(.caption2)
-                        .foregroundColor(.primary) :
-                    nil
-                )
-                .overlay(
-                    Rectangle()
-                        .stroke(isSelected ? .primary : .secondary, lineWidth: isSelected ? 3 : 1)
-                )
-                .cornerRadius(8)
-        }
-        .buttonStyle(.plain)
+        .padding()
+        .frame(width: 400, height: 200)
     }
 }
 
@@ -275,20 +124,18 @@ struct SectionHeader: View {
     let icon: String
     
     var body: some View {
-        HStack(spacing: 8) {
+        HStack {
             Image(systemName: icon)
-                .font(.caption)
                 .foregroundColor(.blue)
-            
             Text(title)
                 .font(.subheadline)
                 .fontWeight(.semibold)
-                .foregroundColor(.primary)
+            Spacer()
         }
     }
 }
 
-// MARK: - Tool Button for Editor
+// MARK: - Tool Button
 struct ToolButton: View {
     let icon: String
     let title: String
@@ -299,23 +146,15 @@ struct ToolButton: View {
         Button(action: action) {
             VStack(spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 18, weight: .medium))
-                    .foregroundColor(isSelected ? .white : .primary)
-                
+                    .font(.system(size: 16))
                 Text(title)
                     .font(.caption2)
-                    .foregroundColor(isSelected ? .white : .secondary)
+                    .lineLimit(1)
             }
-            .frame(maxWidth: .infinity)
-            .frame(height: 50)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Color.blue : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? Color.blue : Color.secondary.opacity(0.3), lineWidth: 1)
-            )
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .foregroundColor(isSelected ? .white : .primary)
+            .background(isSelected ? .blue : .gray.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
         }
         .buttonStyle(.plain)
     }
@@ -326,12 +165,13 @@ struct ColorSelectionGrid: View {
     @Binding var selectedColor: Color
     
     private let colors: [Color] = [
-        .red, .orange, .yellow, .green, .blue, .purple, .pink,
-        .black, .gray, .white, .brown, .cyan, .mint, .indigo
+        .red, .orange, .yellow, .green, .blue, .purple,
+        .pink, .brown, .indigo, .cyan, .mint, .gray,
+        .black, .white
     ]
     
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 6) {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 7), spacing: 8) {
             ForEach(colors, id: \.self) { color in
                 Button(action: { selectedColor = color }) {
                     Circle()
@@ -339,14 +179,7 @@ struct ColorSelectionGrid: View {
                         .frame(width: 24, height: 24)
                         .overlay(
                             Circle()
-                                .stroke(selectedColor == color ? Color.primary : Color.secondary.opacity(0.3),
-                                       lineWidth: selectedColor == color ? 2 : 1)
-                        )
-                        .overlay(
-                            selectedColor == color ?
-                            Image(systemName: "checkmark")
-                                .font(.caption2.bold())
-                                .foregroundColor(color == .white || color == .yellow ? .black : .white) : nil
+                                .stroke(selectedColor == color ? .blue : .gray.opacity(0.3), lineWidth: selectedColor == color ? 2 : 1)
                         )
                 }
                 .buttonStyle(.plain)
@@ -359,32 +192,30 @@ struct ColorSelectionGrid: View {
 struct BackgroundSelectionGrid: View {
     @Binding var backgroundColor: Color
     
-    private let backgrounds: [Color] = [
-        .clear, .white, .black, .gray.opacity(0.1), .gray.opacity(0.2),
-        .blue.opacity(0.1), .green.opacity(0.1), .red.opacity(0.1), .yellow.opacity(0.1)
+    private let backgroundColors: [Color] = [
+        .clear, .white, .black, .gray.opacity(0.1),
+        .blue, .pink, .green, .purple,
+        .yellow, .mint, .red, .indigo, .brown
     ]
     
     var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 5), spacing: 6) {
-            ForEach(backgrounds, id: \.self) { color in
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 4), spacing: 8) {
+            ForEach(backgroundColors, id: \.self) { color in
                 Button(action: { backgroundColor = color }) {
-                    Rectangle()
-                        .fill(color == .clear ?
-                              LinearGradient(colors: [.white, .gray.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing) :
-                              LinearGradient(colors: [color], startPoint: .leading, endPoint: .trailing))
-                        .frame(width: 32, height: 24)
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(color == .clear ? .white : color)
+                        .frame(height: 32)
                         .overlay(
+                            RoundedRectangle(cornerRadius: 6)
+                                .stroke(backgroundColor == color ? .blue : .gray.opacity(0.3), lineWidth: backgroundColor == color ? 2 : 1)
+                        )
+                        .overlay(
+                            // Special indicator for transparent background
                             color == .clear ?
                             Text("None")
                                 .font(.caption2)
-                                .foregroundColor(.primary) : nil
+                                .foregroundColor(.gray) : nil
                         )
-                        .overlay(
-                            Rectangle()
-                                .stroke(backgroundColor == color ? Color.primary : Color.secondary.opacity(0.3),
-                                       lineWidth: backgroundColor == color ? 2 : 1)
-                        )
-                        .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
             }
@@ -392,107 +223,582 @@ struct BackgroundSelectionGrid: View {
     }
 }
 
+// MARK: - Screenshot Canvas
+struct ScreenshotCanvas: NSViewRepresentable {
+    let screenshot: Screenshot
+    let selectedTool: DrawingTool
+    let selectedColor: Color
+    let lineWidth: CGFloat
+    let scale: CGFloat
+    let offset: CGSize
+    @Binding var drawingStrokes: [DrawingStroke]
+    @Binding var currentStroke: [CGPoint]
+    let onTextTap: (CGPoint) -> Void
+    
+    func makeNSView(context: Context) -> CanvasNSView {
+        let canvasView = CanvasNSView()
+        canvasView.coordinator = context.coordinator
+        return canvasView
+    }
+    
+    func updateNSView(_ nsView: CanvasNSView, context: Context) {
+        nsView.screenshot = screenshot
+        nsView.selectedTool = selectedTool
+        nsView.selectedColor = NSColor(selectedColor)
+        nsView.lineWidth = lineWidth
+        nsView.drawingStrokes = drawingStrokes
+        nsView.currentStroke = currentStroke
+        nsView.onTextTap = onTextTap
+        nsView.needsDisplay = true
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject {
+        let parent: ScreenshotCanvas
+        
+        init(_ parent: ScreenshotCanvas) {
+            self.parent = parent
+        }
+    }
+}
+
+// MARK: - Canvas NSView
+class CanvasNSView: NSView {
+    var coordinator: ScreenshotCanvas.Coordinator?
+    var screenshot: Screenshot?
+    var selectedTool: DrawingTool = .pen
+    var selectedColor: NSColor = .red
+    var lineWidth: CGFloat = 3.0
+    var drawingStrokes: [DrawingStroke] = []
+    var currentStroke: [CGPoint] = []
+    var onTextTap: ((CGPoint) -> Void)?
+    
+    private var isDrawing = false
+    
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        
+        // Draw screenshot
+        if let image = screenshot?.image {
+            let imageRect = NSRect(origin: .zero, size: image.size)
+            image.draw(in: imageRect)
+        }
+        
+        // Draw completed strokes
+        for stroke in drawingStrokes {
+            drawStroke(stroke, in: context)
+        }
+        
+        // Draw current stroke in progress
+        if !currentStroke.isEmpty && selectedTool != .text {
+            let stroke = DrawingStroke(
+                tool: selectedTool,
+                points: currentStroke,
+                color: selectedColor,
+                lineWidth: lineWidth
+            )
+            drawStroke(stroke, in: context)
+        }
+    }
+    
+    private func drawStroke(_ stroke: DrawingStroke, in context: CGContext) {
+        context.saveGState()
+        
+        switch stroke.tool {
+        case .pen, .highlighter:
+            drawPenStroke(stroke, in: context)
+        case .arrow:
+            drawArrowStroke(stroke, in: context)
+        case .rectangle:
+            drawRectangleStroke(stroke, in: context)
+        case .ellipse:
+            drawEllipseStroke(stroke, in: context)
+        case .text:
+            drawTextStroke(stroke)
+        }
+        
+        context.restoreGState()
+    }
+    
+    private func drawPenStroke(_ stroke: DrawingStroke, in context: CGContext) {
+        guard stroke.points.count > 1 else { return }
+        
+        context.setStrokeColor(stroke.color.cgColor)
+        context.setLineWidth(stroke.lineWidth)
+        context.setLineCap(.round)
+        context.setLineJoin(.round)
+        
+        if stroke.tool == .highlighter {
+            context.setAlpha(0.5)
+        }
+        
+        context.beginPath()
+        context.move(to: stroke.points[0])
+        for point in stroke.points.dropFirst() {
+            context.addLine(to: point)
+        }
+        context.strokePath()
+        
+        if stroke.tool == .highlighter {
+            context.setAlpha(1.0)
+        }
+    }
+    
+    private func drawArrowStroke(_ stroke: DrawingStroke, in context: CGContext) {
+        guard stroke.points.count >= 2 else { return }
+        
+        let start = stroke.points.first!
+        let end = stroke.points.last!
+        
+        context.setStrokeColor(stroke.color.cgColor)
+        context.setLineWidth(stroke.lineWidth)
+        context.setLineCap(.round)
+        
+        // Draw line
+        context.beginPath()
+        context.move(to: start)
+        context.addLine(to: end)
+        context.strokePath()
+        
+        // Draw arrowhead
+        let angle = atan2(end.y - start.y, end.x - start.x)
+        let arrowLength: CGFloat = max(15, stroke.lineWidth * 3)
+        let arrowAngle: CGFloat = .pi / 6
+        
+        let arrowPoint1 = CGPoint(
+            x: end.x - arrowLength * cos(angle - arrowAngle),
+            y: end.y - arrowLength * sin(angle - arrowAngle)
+        )
+        let arrowPoint2 = CGPoint(
+            x: end.x - arrowLength * cos(angle + arrowAngle),
+            y: end.y - arrowLength * sin(angle + arrowAngle)
+        )
+        
+        context.beginPath()
+        context.move(to: end)
+        context.addLine(to: arrowPoint1)
+        context.move(to: end)
+        context.addLine(to: arrowPoint2)
+        context.strokePath()
+    }
+    
+    private func drawRectangleStroke(_ stroke: DrawingStroke, in context: CGContext) {
+        guard stroke.points.count >= 2 else { return }
+        
+        let start = stroke.points.first!
+        let end = stroke.points.last!
+        
+        let rect = CGRect(
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(end.x - start.x),
+            height: abs(end.y - start.y)
+        )
+        
+        context.setStrokeColor(stroke.color.cgColor)
+        context.setLineWidth(stroke.lineWidth)
+        context.stroke(rect)
+    }
+    
+    private func drawEllipseStroke(_ stroke: DrawingStroke, in context: CGContext) {
+        guard stroke.points.count >= 2 else { return }
+        
+        let start = stroke.points.first!
+        let end = stroke.points.last!
+        
+        let rect = CGRect(
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(end.x - start.x),
+            height: abs(end.y - start.y)
+        )
+        
+        context.setStrokeColor(stroke.color.cgColor)
+        context.setLineWidth(stroke.lineWidth)
+        context.strokeEllipse(in: rect)
+    }
+    
+    private func drawTextStroke(_ stroke: DrawingStroke) {
+        guard let text = stroke.text, let point = stroke.points.first else { return }
+        
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: max(12, stroke.lineWidth * 3)),
+            .foregroundColor: stroke.color
+        ]
+        
+        let attributedString = NSAttributedString(string: text, attributes: attributes)
+        attributedString.draw(at: point)
+    }
+    
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        
+        if selectedTool == .text {
+            onTextTap?(point)
+            return
+        }
+        
+        isDrawing = true
+        currentStroke = [point]
+        needsDisplay = true
+    }
+    
+    override func mouseDragged(with event: NSEvent) {
+        guard isDrawing else { return }
+        
+        let point = convert(event.locationInWindow, from: nil)
+        
+        switch selectedTool {
+        case .pen, .highlighter:
+            currentStroke.append(point)
+        case .arrow, .rectangle, .ellipse:
+            if currentStroke.count >= 2 {
+                currentStroke[1] = point
+            } else {
+                currentStroke.append(point)
+            }
+        case .text:
+            break
+        }
+        
+        needsDisplay = true
+    }
+    
+    override func mouseUp(with event: NSEvent) {
+        guard isDrawing && !currentStroke.isEmpty else { return }
+        
+        isDrawing = false
+        
+        let stroke = DrawingStroke(
+            tool: selectedTool,
+            points: currentStroke,
+            color: selectedColor,
+            lineWidth: lineWidth
+        )
+        
+        coordinator?.parent.drawingStrokes.append(stroke)
+        coordinator?.parent.currentStroke = []
+        currentStroke = []
+        needsDisplay = true
+    }
+}
+
+// MARK: - Screenshot Canvas View (SwiftUI Canvas-based)
+struct ScreenshotCanvasView: View {
+    let screenshot: Screenshot
+    let selectedTool: DrawingTool
+    let selectedColor: Color
+    let lineWidth: CGFloat
+    let backgroundColor: Color
+    @Binding var drawingStrokes: [DrawingStroke]
+    @Binding var currentStroke: [CGPoint]
+    let onTextTap: (CGPoint) -> Void
+    
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack {
+                // Draw the actual screenshot image
+                if let image = screenshot.image {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+                
+                // Drawing overlay
+                Canvas { context, size in
+                    // Draw existing strokes
+                    for stroke in drawingStrokes {
+                        drawStroke(context: context, stroke: stroke)
+                    }
+                    
+                    // Draw current stroke being drawn
+                    if !currentStroke.isEmpty {
+                        let currentDrawingStroke = DrawingStroke(
+                            tool: selectedTool,
+                            points: currentStroke,
+                            color: NSColor(selectedColor),
+                            lineWidth: lineWidth,
+                            text: nil
+                        )
+                        drawStroke(context: context, stroke: currentDrawingStroke)
+                    }
+                }
+                .allowsHitTesting(true)
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { value in
+                            if selectedTool == .text {
+                                onTextTap(value.location)
+                            } else if selectedTool == .rectangle || selectedTool == .ellipse || selectedTool == .arrow {
+                                // For shapes, we want to replace the current stroke with start and end points
+                                if currentStroke.isEmpty {
+                                    currentStroke.append(value.startLocation)
+                                }
+                                if currentStroke.count == 1 {
+                                    currentStroke.append(value.location)
+                                } else {
+                                    currentStroke[1] = value.location
+                                }
+                            } else {
+                                // For pen and highlighter, add continuous points
+                                currentStroke.append(value.location)
+                            }
+                        }
+                        .onEnded { _ in
+                            if !currentStroke.isEmpty && selectedTool != .text {
+                                let stroke = DrawingStroke(
+                                    tool: selectedTool,
+                                    points: currentStroke,
+                                    color: NSColor(selectedColor),
+                                    lineWidth: lineWidth,
+                                    text: nil
+                                )
+                                drawingStrokes.append(stroke)
+                                currentStroke.removeAll()
+                            }
+                        }
+                )
+            }
+        }
+    }
+    
+    private func drawStroke(context: GraphicsContext, stroke: DrawingStroke) {
+        switch stroke.tool {
+        case .pen, .highlighter:
+            drawPenStroke(context: context, stroke: stroke)
+        case .arrow:
+            drawArrow(context: context, stroke: stroke)
+        case .rectangle:
+            drawRectangle(context: context, stroke: stroke)
+        case .ellipse:
+            drawEllipse(context: context, stroke: stroke)
+        case .text:
+            drawText(context: context, stroke: stroke)
+        }
+    }
+    
+    private func drawPenStroke(context: GraphicsContext, stroke: DrawingStroke) {
+        guard stroke.points.count > 1 else { return }
+        
+        var path = Path()
+        path.move(to: stroke.points[0])
+        for point in stroke.points.dropFirst() {
+            path.addLine(to: point)
+        }
+        
+        let strokeStyle = StrokeStyle(
+            lineWidth: stroke.lineWidth,
+            lineCap: .round,
+            lineJoin: .round
+        )
+        
+        var strokeColor = Color(stroke.color)
+        if stroke.tool == .highlighter {
+            strokeColor = strokeColor.opacity(0.5)
+        }
+        
+        context.stroke(
+            path,
+            with: .color(strokeColor),
+            style: strokeStyle
+        )
+    }
+    
+    private func drawArrow(context: GraphicsContext, stroke: DrawingStroke) {
+        guard stroke.points.count >= 2 else { return }
+        
+        let start = stroke.points.first!
+        let end = stroke.points.last!
+        
+        var path = Path()
+        path.move(to: start)
+        path.addLine(to: end)
+        
+        // Add arrowhead
+        let angle = atan2(end.y - start.y, end.x - start.x)
+        let arrowLength: CGFloat = max(15, stroke.lineWidth * 3)
+        let arrowAngle: CGFloat = .pi / 6
+        
+        let arrowPoint1 = CGPoint(
+            x: end.x - arrowLength * cos(angle - arrowAngle),
+            y: end.y - arrowLength * sin(angle - arrowAngle)
+        )
+        let arrowPoint2 = CGPoint(
+            x: end.x - arrowLength * cos(angle + arrowAngle),
+            y: end.y - arrowLength * sin(angle + arrowAngle)
+        )
+        
+        path.move(to: end)
+        path.addLine(to: arrowPoint1)
+        path.move(to: end)
+        path.addLine(to: arrowPoint2)
+        
+        context.stroke(
+            path,
+            with: .color(Color(stroke.color)),
+            style: StrokeStyle(lineWidth: stroke.lineWidth, lineCap: .round)
+        )
+    }
+    
+    private func drawRectangle(context: GraphicsContext, stroke: DrawingStroke) {
+        guard stroke.points.count >= 2 else { return }
+        
+        let start = stroke.points.first!
+        let end = stroke.points.last!
+        
+        let rect = CGRect(
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(end.x - start.x),
+            height: abs(end.y - start.y)
+        )
+        
+        context.stroke(
+            Path(rect),
+            with: .color(Color(stroke.color)),
+            style: StrokeStyle(lineWidth: stroke.lineWidth)
+        )
+    }
+    
+    private func drawEllipse(context: GraphicsContext, stroke: DrawingStroke) {
+        guard stroke.points.count >= 2 else { return }
+        
+        let start = stroke.points.first!
+        let end = stroke.points.last!
+        
+        let rect = CGRect(
+            x: min(start.x, end.x),
+            y: min(start.y, end.y),
+            width: abs(end.x - start.x),
+            height: abs(end.y - start.y)
+        )
+        
+        context.stroke(
+            Path(ellipseIn: rect),
+            with: .color(Color(stroke.color)),
+            style: StrokeStyle(lineWidth: stroke.lineWidth)
+        )
+    }
+    
+    private func drawText(context: GraphicsContext, stroke: DrawingStroke) {
+        guard let text = stroke.text, let point = stroke.points.first else { return }
+        
+        context.draw(
+            Text(text)
+                .font(.system(size: max(12, stroke.lineWidth * 3)))
+                .foregroundColor(Color(stroke.color))
+                .bold(),
+            at: point,
+            anchor: .topLeading
+        )
+    }
+}
+
 // MARK: - Preferences View
 struct PreferencesView: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var defaultSaveLocation = ""
-    @State private var autoOpenEditor = true
-    @State private var captureSound = true
+    @State private var defaultSaveLocation = "Pictures/Screenz"
     @State private var defaultFormat = "PNG"
-    
-    private let formats = ["PNG", "JPEG", "TIFF"]
+    @State private var includeTimestamp = true
+    @State private var showCaptureFlash = true
+    @State private var playShutterSound = false
     
     var body: some View {
         VStack(spacing: 20) {
-            // Header with close button
             HStack {
                 Text("Preferences")
-                    .font(.title2)
-                    .fontWeight(.semibold)
+                    .font(.title)
+                    .fontWeight(.bold)
                 
                 Spacer()
                 
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
+                Button("Done") {
+                    dismiss()
                 }
-                .buttonStyle(.plain)
-                .help("Close")
+                .buttonStyle(.borderedProminent)
             }
             .padding()
             
-            Divider()
-            
-            // Settings content
-            VStack(alignment: .leading, spacing: 16) {
-                Group {
+            Form {
+                Section("Capture Settings") {
                     HStack {
                         Text("Default Save Location:")
-                            .frame(width: 150, alignment: .leading)
-                        
-                        TextField("Choose folder", text: $defaultSaveLocation)
-                            .textFieldStyle(.roundedBorder)
-                        
-                        Button("Browse") {
-                            let panel = NSOpenPanel()
-                            panel.canChooseDirectories = true
-                            panel.canChooseFiles = false
-                            panel.allowsMultipleSelection = false
-                            
-                            if panel.runModal() == .OK,
-                               let url = panel.url {
-                                defaultSaveLocation = url.path
-                            }
+                        Spacer()
+                        Text(defaultSaveLocation)
+                            .foregroundColor(.secondary)
+                        Button("Change...") {
+                            // Open folder picker
                         }
                         .buttonStyle(.bordered)
                     }
                     
                     HStack {
                         Text("Default Format:")
-                            .frame(width: 150, alignment: .leading)
-                        
+                        Spacer()
                         Picker("Format", selection: $defaultFormat) {
-                            ForEach(formats, id: \.self) { format in
-                                Text(format).tag(format)
-                            }
+                            Text("PNG").tag("PNG")
+                            Text("JPEG").tag("JPEG")
+                            Text("TIFF").tag("TIFF")
                         }
                         .pickerStyle(.menu)
                         .frame(width: 100)
-                        
-                        Spacer()
                     }
                     
-                    Toggle("Auto-open editor after capture", isOn: $autoOpenEditor)
+                    Toggle("Include timestamp in filename", isOn: $includeTimestamp)
+                    Toggle("Show capture flash", isOn: $showCaptureFlash)
+                    Toggle("Play shutter sound", isOn: $playShutterSound)
+                }
+                
+                Section("Keyboard Shortcuts") {
+                    HStack {
+                        Text("Capture Full Screen:")
+                        Spacer()
+                        Text("⌘⇧3")
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
                     
-                    Toggle("Play capture sound", isOn: $captureSound)
+                    HStack {
+                        Text("Capture Window:")
+                        Spacer()
+                        Text("⌘⇧4")
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    HStack {
+                        Text("Capture Selection:")
+                        Spacer()
+                        Text("⌘⇧5")
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Section("About") {
+                    HStack {
+                        Text("Version:")
+                        Spacer()
+                        Text("1.0.0")
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    HStack {
+                        Text("Build:")
+                        Spacer()
+                        Text("100")
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
-            .padding(.horizontal)
-            
-            Spacer()
-            
-            // Action buttons
-            HStack {
-                Button("Reset to Defaults") {
-                    defaultSaveLocation = ""
-                    autoOpenEditor = true
-                    captureSound = true
-                    defaultFormat = "PNG"
-                }
-                .buttonStyle(.bordered)
-                
-                Spacer()
-                
-                Button("Save") {
-                    // Save preferences logic here
-                    dismiss()
-                }
-                .buttonStyle(.borderedProminent)
-            }
-            .padding()
+            .formStyle(.grouped)
         }
         .frame(width: 500, height: 400)
-        .background(.regularMaterial)
     }
 }

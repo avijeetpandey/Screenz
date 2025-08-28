@@ -174,7 +174,8 @@ class ScreenshotService: ObservableObject {
     }
     
     private func saveScreenshot(image: NSImage) {
-        let screenshot = Screenshot(image: image)
+        let filename = "Screenshot_\(DateFormatter.filenameDateFormatter.string(from: Date())).png"
+        let screenshot = Screenshot(image: image, filename: filename)
         screenshots.insert(screenshot, at: 0) // Insert at beginning for newest first
         
         // Save to Pictures/Screenz folder for better organization
@@ -211,4 +212,13 @@ enum ExportFormat: String, CaseIterable {
     case jpg = "JPG"
     case pdf = "PDF"
     case tiff = "TIFF"
+}
+
+// MARK: - DateFormatter Extension
+extension DateFormatter {
+    static let filenameDateFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        return formatter
+    }()
 }

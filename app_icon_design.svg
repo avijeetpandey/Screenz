@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- Main gradient for the background -->
+    <linearGradient id="mainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#764ba2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f093fb;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Screen gradient -->
+    <linearGradient id="screenGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#f8f9fa;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#e9ecef;stop-opacity:1" />
+    </linearGradient>
+    
+    <!-- Shadow filter -->
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="8" stdDeviation="16" flood-opacity="0.2"/>
+    </filter>
+    
+    <!-- Capture flash effect -->
+    <radialGradient id="flashGradient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:0.8" />
+      <stop offset="60%" style="stop-color:#ffffff;stop-opacity:0.3" />
+      <stop offset="100%" style="stop-color:#ffffff;stop-opacity:0" />
+    </radialGradient>
+  </defs>
+  
+  <!-- Background circle with gradient -->
+  <circle cx="256" cy="256" r="240" fill="url(#mainGradient)" filter="url(#shadow)"/>
+  
+  <!-- Main screen/monitor shape -->
+  <rect x="140" y="160" width="232" height="146" rx="12" ry="12" fill="url(#screenGradient)" stroke="#495057" stroke-width="3"/>
+  
+  <!-- Screen content (simulated screenshot) -->
+  <rect x="150" y="170" width="212" height="126" rx="6" ry="6" fill="#6c757d" opacity="0.3"/>
+  
+  <!-- Selection rectangle overlay (dashed border) -->
+  <rect x="170" y="185" width="80" height="50" rx="4" ry="4" fill="none" stroke="#007bff" stroke-width="2" stroke-dasharray="8,4" opacity="0.8"/>
+  
+  <!-- Selection corner handles -->
+  <circle cx="170" cy="185" r="4" fill="#007bff"/>
+  <circle cx="250" cy="185" r="4" fill="#007bff"/>
+  <circle cx="170" cy="235" r="4" fill="#007bff"/>
+  <circle cx="250" cy="235" r="4" fill="#007bff"/>
+  
+  <!-- Editing tools (pen icon) -->
+  <g transform="translate(290, 200) scale(1.5)">
+    <path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z" fill="#fd7e14"/>
+  </g>
+  
+  <!-- Color palette indicator -->
+  <g transform="translate(320, 240)">
+    <circle cx="0" cy="0" r="8" fill="#dc3545"/>
+    <circle cx="16" cy="0" r="8" fill="#28a745"/>
+    <circle cx="32" cy="0" r="8" fill="#007bff"/>
+  </g>
+  
+  <!-- Camera shutter/capture effect -->
+  <circle cx="256" cy="256" r="180" fill="url(#flashGradient)" opacity="0.4"/>
+  
+  <!-- Corner brackets (capture frame indicator) -->
+  <g stroke="#ffffff" stroke-width="4" fill="none" opacity="0.8">
+    <!-- Top left -->
+    <path d="M120 140 L120 120 L140 120"/>
+    <!-- Top right -->
+    <path d="M372 120 L392 120 L392 140"/>
+    <!-- Bottom left -->
+    <path d="M140 352 L120 352 L120 332"/>
+    <!-- Bottom right -->
+    <path d="M392 332 L392 352 L372 352"/>
+  </g>
+  
+  <!-- Highlight/gloss effect -->
+  <ellipse cx="256" cy="180" rx="120" ry="60" fill="url(#flashGradient)" opacity="0.2"/>
+</svg>

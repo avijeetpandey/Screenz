@@ -5,36 +5,29 @@
 //  Created by Avijeet Pandey on 28/08/25.
 //
 
-import Foundation
+import SwiftUI
 import AppKit
 
-struct Screenshot: Identifiable, Codable, Hashable {
+// MARK: - Screenshot Model
+struct Screenshot: Identifiable, Hashable {
     let id = UUID()
-    let timestamp: Date
+    let image: NSImage?
     let filename: String
-    var imageData: Data
+    let dateTaken: Date
     let originalSize: CGSize
     
-    init(image: NSImage, filename: String? = nil) {
-        self.timestamp = Date()
-        self.filename = filename ?? "Screenshot-\(DateFormatter.screenshotFormatter.string(from: Date())).png"
-        self.originalSize = image.size
-        
-        // Convert NSImage to Data for storage
-        if let tiffData = image.tiffRepresentation,
-           let bitmapRep = NSBitmapImageRep(data: tiffData),
-           let pngData = bitmapRep.representation(using: .png, properties: [:]) {
-            self.imageData = pngData
-        } else {
-            self.imageData = Data()
-        }
+    // Computed property for timestamp (used by ContentView and ScreenshotGalleryView)
+    var timestamp: Date {
+        return dateTaken
     }
     
-    var image: NSImage? {
-        return NSImage(data: imageData)
+    init(image: NSImage?, filename: String) {
+        self.image = image
+        self.filename = filename
+        self.dateTaken = Date()
+        self.originalSize = image?.size ?? CGSize(width: 0, height: 0)
     }
     
-    // Hashable conformance
     func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
@@ -44,34 +37,75 @@ struct Screenshot: Identifiable, Codable, Hashable {
     }
 }
 
-extension DateFormatter {
-    static let screenshotFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy-MM-dd-HH-mm-ss"
-        return formatter
-    }()
-}
-
-enum CaptureMode {
-    case fullScreen
-    case window
-    case selection
-    case timed(seconds: Int)
-}
-
-enum DrawingTool {
+// MARK: - Drawing Tools
+enum DrawingTool: CaseIterable {
     case pen
     case highlighter
+    case text
     case arrow
     case rectangle
     case ellipse
-    case text
+    
+    var systemImage: String {
+        switch self {
+        case .pen: return "pencil"
+        case .highlighter: return "highlighter"
+        case .text: return "textformat"
+        case .arrow: return "arrow.up.right"
+        case .rectangle: return "rectangle"
+        case .ellipse: return "circle"
+        }
+    }
+    
+    var title: String {
+        switch self {
+        case .pen: return "Pen"
+        case .highlighter: return "Highlight"
+        case .text: return "Text"
+        case .arrow: return "Arrow"
+        case .rectangle: return "Rectangle"
+        case .ellipse: return "Circle"
+        }
+    }
 }
 
-struct DrawingStroke {
+// MARK: - Drawing Stroke
+struct DrawingStroke: Identifiable {
+    let id = UUID()
     let tool: DrawingTool
     let points: [CGPoint]
     let color: NSColor
     let lineWidth: CGFloat
     let text: String?
+    
+    init(tool: DrawingTool, points: [CGPoint], color: NSColor, lineWidth: CGFloat, text: String? = nil) {
+        self.tool = tool
+        self.points = points
+        self.color = color
+        self.lineWidth = lineWidth
+        self.text = text
+    }
+}
+
+// MARK: - Capture Mode
+enum CaptureMode: CaseIterable {
+    case fullScreen
+    case window
+    case selection
+    
+    var title: String {
+        switch self {
+        case .fullScreen: return "Full Screen"
+        case .window: return "Window"
+        case .selection: return "Selection"
+        }
+    }
+    
+    var systemImage: String {
+        switch self {
+        case .fullScreen: return "display"
+        case .window: return "macwindow"
+        case .selection: return "selection.pin.in.out"
+        }
+    }
 }
