@@ -10,8 +10,11 @@ import SwiftUI
 @main
 struct ScreenzApp: App {
     var body: some Scene {
-        WindowGroup {
+        Window("Screenz", id: "main") {
             ContentView()
         }
+        .windowResizability(.contentSize)
+        .defaultSize(width: 1000, height: 700)
+        .windowToolbarStyle(.unified)
     }
 }
