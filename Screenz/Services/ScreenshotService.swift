@@ -107,6 +107,45 @@ class ScreenshotService: ObservableObject {
         return NSImage(cgImage: croppedImage, size: rect.size)
     }
     
+    func captureSelection() async -> NSImage? {
+        guard hasScreenRecordingPermission else {
+            checkScreenRecordingPermission()
+            return nil
+        }
+        
+        // Use the native macOS screencapture tool for selection
+        return await withCheckedContinuation { continuation in
+            let task = Process()
+            task.launchPath = "/usr/sbin/screencapture"
+            
+            // Create temporary file path
+            let tempURL = FileManager.default.temporaryDirectory.appendingPathComponent("temp_selection.png")
+            
+            // Arguments: -s for selection, -x for no sound, path to save
+            task.arguments = ["-s", "-x", tempURL.path]
+            
+            task.terminationHandler = { process in
+                DispatchQueue.main.async {
+                    if process.terminationStatus == 0 {
+                        // Successfully captured, load the image
+                        if let image = NSImage(contentsOf: tempURL) {
+                            // Clean up temp file
+                            try? FileManager.default.removeItem(at: tempURL)
+                            continuation.resume(returning: image)
+                        } else {
+                            continuation.resume(returning: nil)
+                        }
+                    } else {
+                        // User cancelled or failed
+                        continuation.resume(returning: nil)
+                    }
+                }
+            }
+            
+            task.launch()
+        }
+    }
+    
     func addScreenshot(_ image: NSImage) {
         let timestamp = Date()
         let formatter = DateFormatter()

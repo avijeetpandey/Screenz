@@ -9,7 +9,6 @@ import SwiftUI
 
 struct CaptureHomeView: View {
     @ObservedObject var screenshotService: ScreenshotService
-    @State private var showingSelectionCapture = false
     
     var body: some View {
         VStack(spacing: 40) {
@@ -103,7 +102,12 @@ struct CaptureHomeView: View {
                         icon: "viewfinder.rectangular",
                         color: .green
                     ) {
-                        showingSelectionCapture = true
+                        // Direct native selection capture - no popup
+                        Task {
+                            if let image = await screenshotService.captureSelection() {
+                                screenshotService.addScreenshot(image)
+                            }
+                        }
                     }
                     
                     CaptureCard(
@@ -128,9 +132,6 @@ struct CaptureHomeView: View {
         .padding(40)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.regularMaterial)
-        .sheet(isPresented: $showingSelectionCapture) {
-            SelectionCaptureView(screenshotService: screenshotService)
-        }
     }
 }
 
