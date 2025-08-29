@@ -346,32 +346,16 @@ struct ScreenshotEditorView: View {
     }
     
     private func saveEditedScreenshot() {
-        // Create a new image with the editing applied
         guard let originalImage = screenshot.image else {
             print("Error: No original image found")
             return
         }
         
-        let size = originalImage.size
-        let image = NSImage(size: size)
-        
-        image.lockFocus()
-        
-        // Draw background if set
-        if backgroundColor != .clear {
-            NSColor(backgroundColor).setFill()
-            NSRect(origin: .zero, size: size).fill()
+        // Create the edited image using Core Graphics
+        guard let editedImage = createEditedImageUsingCoreGraphics() else {
+            print("Failed to create edited image")
+            return
         }
-        
-        // Draw original image
-        originalImage.draw(in: NSRect(origin: .zero, size: size))
-        
-        // Draw strokes
-        for stroke in drawingStrokes {
-            drawStrokeOnContext(stroke: stroke, size: size)
-        }
-        
-        image.unlockFocus()
         
         // Create timestamp for filename
         let timestamp = Date()
@@ -380,10 +364,10 @@ struct ScreenshotEditorView: View {
         let editedFilename = "Edited_\(formatter.string(from: timestamp)).png"
         
         // Save the edited screenshot using the service's addScreenshot method
-        let editedScreenshot = Screenshot(image: image, filename: editedFilename)
+        let editedScreenshot = Screenshot(image: editedImage, filename: editedFilename)
         screenshotService.screenshots.insert(editedScreenshot, at: 0)
         
-        print("Saved edited screenshot: \(editedFilename)")
+        print("✅ Saved edited screenshot: \(editedFilename)")
         dismiss()
     }
     
@@ -393,226 +377,271 @@ struct ScreenshotEditorView: View {
             return
         }
         
-        let panel = NSSavePanel()
-        panel.allowedContentTypes = [.png, .jpeg]
-        panel.nameFieldStringValue = screenshot.filename
-        panel.canCreateDirectories = true
+        // Create the edited image using Core Graphics
+        guard let editedImage = createEditedImageUsingCoreGraphics() else {
+            print("Failed to create edited image")
+            return
+        }
         
-        Task { @MainActor in
-            let result = await panel.begin()
-            if result == .OK, let url = panel.url {
-                // Create the edited image and convert to data on main thread
-                guard let editedImage = createEditedImage(),
-                      let tiffData = editedImage.tiffRepresentation,
-                      let bitmapRep = NSBitmapImageRep(data: tiffData) else {
-                    print("Failed to prepare image for export")
-                    return
-                }
-                
-                // Determine file type and properties
-                let fileType: NSBitmapImageRep.FileType = url.pathExtension.lowercased() == "jpg" || url.pathExtension.lowercased() == "jpeg" ? .jpeg : .png
-                let properties: [NSBitmapImageRep.PropertyKey: Any] = fileType == .jpeg ? [.compressionFactor: 0.9] : [:]
-                
-                guard let imageData = bitmapRep.representation(using: fileType, properties: properties) else {
-                    print("Failed to convert image to data")
-                    return
-                }
-                
-                // Move to background for file operations with sendable data
-                Task.detached {
-                    do {
-                        try imageData.write(to: url)
-                        
-                        await MainActor.run {
-                            print("Successfully exported to: \(url.path)")
-                        }
-                    } catch {
-                        await MainActor.run {
-                            print("Export failed: \(error.localizedDescription)")
-                        }
+        // Convert to PNG data
+        guard let tiffData = editedImage.tiffRepresentation,
+              let bitmapRep = NSBitmapImageRep(data: tiffData),
+              let pngData = bitmapRep.representation(using: .png, properties: [:]) else {
+            print("Failed to convert image to PNG")
+            return
+        }
+        
+        // Create filename with timestamp
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
+        let timestamp = formatter.string(from: Date())
+        let filename = "Screenz_\(timestamp).png"
+        
+        // Use NSSavePanel to request user permission and save location
+        let savePanel = NSSavePanel()
+        savePanel.title = "Export Screenshot"
+        savePanel.message = "Choose where to save your edited screenshot"
+        savePanel.nameFieldStringValue = filename
+        savePanel.allowedContentTypes = [.png]
+        savePanel.canCreateDirectories = true
+        savePanel.isExtensionHidden = false
+        
+        // Set default directory to Desktop if possible
+        if let desktopURL = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first {
+            savePanel.directoryURL = desktopURL
+        }
+        
+        savePanel.begin { result in
+            if result == .OK, let url = savePanel.url {
+                do {
+                    try pngData.write(to: url)
+                    print("✅ Screenshot exported successfully to: \(url.lastPathComponent)")
+                    
+                    // Show success notification on main thread
+                    DispatchQueue.main.async {
+                        // You can add a success toast notification here if desired
+                        NSSound.beep()
+                    }
+                } catch {
+                    print("❌ Export failed: \(error.localizedDescription)")
+                    
+                    // Show error alert on main thread
+                    DispatchQueue.main.async {
+                        let alert = NSAlert()
+                        alert.messageText = "Export Failed"
+                        alert.informativeText = "Could not save the screenshot: \(error.localizedDescription)"
+                        alert.alertStyle = .warning
+                        alert.addButton(withTitle: "OK")
+                        alert.runModal()
                     }
                 }
             }
         }
     }
     
-    // Helper function to create edited image without async issues
-    private func createEditedImage() -> NSImage? {
+    // NEW: Core Graphics implementation that actually works
+    private func createEditedImageUsingCoreGraphics() -> NSImage? {
         guard let originalImage = screenshot.image else { return nil }
         
-        let size = originalImage.size
-        let image = NSImage(size: size)
+        let originalSize = originalImage.size
+        // Scale down large images for better display/export (max 2048px on longest side)
+        let maxDimension: CGFloat = 2048
+        let scale = min(1.0, maxDimension / max(originalSize.width, originalSize.height))
+        let scaledImageSize = CGSize(width: originalSize.width * scale, height: originalSize.height * scale)
         
-        image.lockFocus()
+        // Add padding around the image - increased to 108px
+        let padding: CGFloat = 220
+        let finalSize = CGSize(
+            width: scaledImageSize.width + (padding * 2),
+            height: scaledImageSize.height + (padding * 2)
+        )
         
-        // Draw background if set
+        // Create a new image representation with proper aspect ratio preservation
+        guard let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(data: nil,
+                                    width: Int(finalSize.width),
+                                    height: Int(finalSize.height),
+                                    bitsPerComponent: 8,
+                                    bytesPerRow: 0,
+                                    space: colorSpace,
+                                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else {
+            return nil
+        }
+        
+        // Set the coordinate system to match NSImage (do NOT flip)
+        // This prevents the upside-down issue
+        
+        // Fill the entire canvas with background color if set
         if backgroundColor != .clear {
-            NSColor(backgroundColor).setFill()
-            NSRect(origin: .zero, size: size).fill()
+            let nsColor = NSColor(backgroundColor)
+            context.setFillColor(nsColor.cgColor)
+            context.fill(CGRect(origin: .zero, size: finalSize))
+        } else {
+            // Fill with white background if no color is selected
+            context.setFillColor(CGColor.white)
+            context.fill(CGRect(origin: .zero, size: finalSize))
         }
         
-        // Draw original image
-        originalImage.draw(in: NSRect(origin: .zero, size: size))
+        // Calculate the centered position for the screenshot with proper aspect ratio
+        let imageRect = CGRect(
+            x: padding,
+            y: padding,
+            width: scaledImageSize.width,
+            height: scaledImageSize.height
+        )
         
-        // Draw strokes
+        // Draw the original screenshot in the center with padding, preserving aspect ratio
+        if let cgImage = originalImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            // Ensure the image is drawn with correct aspect ratio
+            context.draw(cgImage, in: imageRect)
+        }
+        
+        // Draw all strokes (scaled and positioned correctly)
         for stroke in drawingStrokes {
-            drawStrokeOnContext(stroke: stroke, size: size)
+            drawStrokeInContext(context: context, stroke: stroke, imageSize: scaledImageSize, scale: scale, offset: CGPoint(x: padding, y: padding))
         }
         
-        image.unlockFocus()
+        // Create NSImage from context with proper size and aspect ratio
+        guard let cgImage = context.makeImage() else { return nil }
+        let resultImage = NSImage(cgImage: cgImage, size: finalSize)
         
-        return image
+        return resultImage
     }
     
-    // Helper function to save image asynchronously
-    private func saveEditedImageToURL(_ image: NSImage?, url: URL) async throws {
-        guard let image = image else {
-            throw ScreenshotError.invalidImage
-        }
+    // NEW: Core Graphics stroke drawing that actually works
+    private func drawStrokeInContext(context: CGContext, stroke: DrawingStroke, imageSize: CGSize, scale: CGFloat = 1.0, offset: CGPoint = .zero) {
+        let nsColor = stroke.color
+        context.saveGState()
         
-        guard let tiffData = image.tiffRepresentation,
-              let bitmapRep = NSBitmapImageRep(data: tiffData) else {
-            throw ScreenshotError.conversionFailed
-        }
-        
-        let fileType: NSBitmapImageRep.FileType = url.pathExtension.lowercased() == "jpg" || url.pathExtension.lowercased() == "jpeg" ? .jpeg : .png
-        let properties: [NSBitmapImageRep.PropertyKey: Any] = fileType == .jpeg ? [.compressionFactor: 0.9] : [:]
-        
-        guard let imageData = bitmapRep.representation(using: fileType, properties: properties) else {
-            throw ScreenshotError.conversionFailed
-        }
-        
-        try imageData.write(to: url)
-    }
-    
-    // Complete implementation of drawStrokeOnContext for both save and export
-    private func drawStrokeOnContext(stroke: DrawingStroke, size: CGSize) {
         switch stroke.tool {
         case .pen, .highlighter:
-            drawPenStrokeOnContext(stroke: stroke)
+            context.setStrokeColor(nsColor.cgColor)
+            context.setLineWidth(stroke.lineWidth * scale)
+            context.setLineCap(.round)
+            context.setLineJoin(.round)
+            
+            if stroke.tool == .highlighter {
+                context.setAlpha(0.5)
+            }
+            
+            if stroke.points.count > 1 {
+                context.beginPath()
+                let firstPoint = CGPoint(
+                    x: (stroke.points[0].x * scale) + offset.x,
+                    y: (stroke.points[0].y * scale) + offset.y
+                )
+                context.move(to: firstPoint)
+                
+                for point in stroke.points.dropFirst() {
+                    let cgPoint = CGPoint(
+                        x: (point.x * scale) + offset.x,
+                        y: (point.y * scale) + offset.y
+                    )
+                    context.addLine(to: cgPoint)
+                }
+                context.strokePath()
+            }
+            
         case .arrow:
-            drawArrowOnContext(stroke: stroke)
+            if stroke.points.count >= 2 {
+                let start = CGPoint(
+                    x: (stroke.points[0].x * scale) + offset.x,
+                    y: (stroke.points[0].y * scale) + offset.y
+                )
+                let end = CGPoint(
+                    x: (stroke.points.last!.x * scale) + offset.x,
+                    y: (stroke.points.last!.y * scale) + offset.y
+                )
+                
+                context.setStrokeColor(nsColor.cgColor)
+                context.setLineWidth(stroke.lineWidth * scale)
+                context.setLineCap(.round)
+                
+                // Draw line
+                context.beginPath()
+                context.move(to: start)
+                context.addLine(to: end)
+                context.strokePath()
+                
+                // Draw arrowhead
+                let angle = atan2(end.y - start.y, end.x - start.x)
+                let arrowLength: CGFloat = max(15, stroke.lineWidth * 3 * scale)
+                let arrowAngle: CGFloat = .pi / 6
+                
+                let arrowPoint1 = CGPoint(
+                    x: end.x - arrowLength * cos(angle - arrowAngle),
+                    y: end.y - arrowLength * sin(angle - arrowAngle)
+                )
+                let arrowPoint2 = CGPoint(
+                    x: end.x - arrowLength * cos(angle + arrowAngle),
+                    y: end.y - arrowLength * sin(angle + arrowAngle)
+                )
+                
+                context.beginPath()
+                context.move(to: end)
+                context.addLine(to: arrowPoint1)
+                context.move(to: end)
+                context.addLine(to: arrowPoint2)
+                context.strokePath()
+            }
+            
         case .rectangle:
-            drawRectangleOnContext(stroke: stroke)
+            if stroke.points.count >= 2 {
+                let start = stroke.points[0]
+                let end = stroke.points.last!
+                
+                let rect = CGRect(
+                    x: (min(start.x, end.x) * scale) + offset.x,
+                    y: (min(start.y, end.y) * scale) + offset.y,
+                    width: abs(end.x - start.x) * scale,
+                    height: abs(end.y - start.y) * scale
+                )
+                
+                context.setStrokeColor(nsColor.cgColor)
+                context.setLineWidth(stroke.lineWidth * scale)
+                context.stroke(rect)
+            }
+            
         case .ellipse:
-            drawEllipseOnContext(stroke: stroke)
+            if stroke.points.count >= 2 {
+                let start = stroke.points[0]
+                let end = stroke.points.last!
+                
+                let rect = CGRect(
+                    x: (min(start.x, end.x) * scale) + offset.x,
+                    y: (min(start.y, end.y) * scale) + offset.y,
+                    width: abs(end.x - start.x) * scale,
+                    height: abs(end.y - start.y) * scale
+                )
+                
+                context.setStrokeColor(nsColor.cgColor)
+                context.setLineWidth(stroke.lineWidth * scale)
+                context.strokeEllipse(in: rect)
+            }
+            
         case .text:
-            drawTextOnContext(stroke: stroke)
+            if let text = stroke.text, let point = stroke.points.first {
+                let fontSize = max(12, stroke.lineWidth * 3 * scale)
+                let font = NSFont.systemFont(ofSize: fontSize)
+                
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: font,
+                    .foregroundColor: nsColor
+                ]
+                
+                let attributedString = NSAttributedString(string: text, attributes: attributes)
+                let textPoint = CGPoint(
+                    x: (point.x * scale) + offset.x,
+                    y: (point.y * scale) + offset.y
+                )
+                
+                // Draw text using Core Text
+                let line = CTLineCreateWithAttributedString(attributedString)
+                context.textPosition = textPoint
+                CTLineDraw(line, context)
+            }
         }
-    }
-    
-    private func drawPenStrokeOnContext(stroke: DrawingStroke) {
-        guard stroke.points.count > 1 else { return }
         
-        let path = NSBezierPath()
-        path.move(to: stroke.points[0])
-        for point in stroke.points.dropFirst() {
-            path.line(to: point)
-        }
-        
-        path.lineWidth = stroke.lineWidth
-        path.lineCapStyle = .round
-        path.lineJoinStyle = .round
-        
-        if stroke.tool == .highlighter {
-            stroke.color.withAlphaComponent(0.5).setStroke()
-        } else {
-            stroke.color.setStroke()
-        }
-        path.stroke()
-    }
-    
-    private func drawArrowOnContext(stroke: DrawingStroke) {
-        guard stroke.points.count >= 2 else { return }
-        
-        let start = stroke.points.first!
-        let end = stroke.points.last!
-        
-        let path = NSBezierPath()
-        path.move(to: start)
-        path.line(to: end)
-        path.lineWidth = stroke.lineWidth
-        path.lineCapStyle = .round
-        
-        stroke.color.setStroke()
-        path.stroke()
-        
-        // Draw arrowhead
-        let angle = atan2(end.y - start.y, end.x - start.x)
-        let arrowLength: CGFloat = max(15, stroke.lineWidth * 3)
-        let arrowAngle: CGFloat = .pi / 6
-        
-        let arrowPoint1 = CGPoint(
-            x: end.x - arrowLength * cos(angle - arrowAngle),
-            y: end.y - arrowLength * sin(angle - arrowAngle)
-        )
-        let arrowPoint2 = CGPoint(
-            x: end.x - arrowLength * cos(angle + arrowAngle),
-            y: end.y - arrowLength * sin(angle + arrowAngle)
-        )
-        
-        let arrowPath = NSBezierPath()
-        arrowPath.move(to: end)
-        arrowPath.line(to: arrowPoint1)
-        arrowPath.move(to: end)
-        arrowPath.line(to: arrowPoint2)
-        arrowPath.lineWidth = stroke.lineWidth
-        arrowPath.lineCapStyle = .round
-        
-        stroke.color.setStroke()
-        arrowPath.stroke()
-    }
-    
-    private func drawRectangleOnContext(stroke: DrawingStroke) {
-        guard stroke.points.count >= 2 else { return }
-        
-        let start = stroke.points.first!
-        let end = stroke.points.last!
-        
-        let rect = NSRect(
-            x: min(start.x, end.x),
-            y: min(start.y, end.y),
-            width: abs(end.x - start.x),
-            height: abs(end.y - start.y)
-        )
-        
-        let path = NSBezierPath(rect: rect)
-        path.lineWidth = stroke.lineWidth
-        
-        stroke.color.setStroke()
-        path.stroke()
-    }
-    
-    private func drawEllipseOnContext(stroke: DrawingStroke) {
-        guard stroke.points.count >= 2 else { return }
-        
-        let start = stroke.points.first!
-        let end = stroke.points.last!
-        
-        let rect = NSRect(
-            x: min(start.x, end.x),
-            y: min(start.y, end.y),
-            width: abs(end.x - start.x),
-            height: abs(end.y - start.y)
-        )
-        
-        let path = NSBezierPath(ovalIn: rect)
-        path.lineWidth = stroke.lineWidth
-        
-        stroke.color.setStroke()
-        path.stroke()
-    }
-    
-    private func drawTextOnContext(stroke: DrawingStroke) {
-        guard let text = stroke.text, let point = stroke.points.first else { return }
-        
-        let fontSize = max(12, stroke.lineWidth * 3)
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: fontSize),
-            .foregroundColor: stroke.color
-        ]
-        
-        let attributedString = NSAttributedString(string: text, attributes: attributes)
-        attributedString.draw(at: point)
+        context.restoreGState()
     }
 }
