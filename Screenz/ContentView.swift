@@ -43,14 +43,12 @@ struct ContentView: View {
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
-                        List(screenshotService.screenshots, id: \.id, selection: $selectedScreenshot) { screenshot in
-                            ScreenshotRow(screenshot: screenshot) {
-                                // Double-click to edit - navigate to editor
-                                navigationPath.append(screenshot)
-                            }
-                            .tag(screenshot)
-                        }
-                        .listStyle(.sidebar)
+                        // Use the enhanced gallery view
+                        ScreenshotGalleryView(
+                            screenshots: screenshotService.screenshots,
+                            selectedScreenshot: $selectedScreenshot,
+                            navigateToHome: navigateToHome
+                        )
                     }
                     
                     Spacer()
@@ -90,7 +88,16 @@ struct ContentView: View {
             }
             .frame(minWidth: 900, minHeight: 600)
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
+                ToolbarItemGroup(placement: .primaryAction) {
+                    // Add Home button to toolbar when not on home
+                    if !navigationPath.isEmpty {
+                        Button(action: navigateToHome) {
+                            Label("Home", systemImage: "house")
+                        }
+                        .buttonStyle(.bordered)
+                        .help("Go to Home")
+                    }
+                    
                     Button("Preferences") {
                         showingPreferences = true
                     }
@@ -98,7 +105,11 @@ struct ContentView: View {
                 }
             }
             .navigationDestination(for: Screenshot.self) { screenshot in
-                ScreenshotEditorView(screenshot: screenshot, screenshotService: screenshotService)
+                ScreenshotEditorView(
+                    screenshot: screenshot,
+                    screenshotService: screenshotService,
+                    navigateToHome: navigateToHome
+                )
             }
         }
         .sheet(isPresented: $showingPreferences) {
@@ -111,6 +122,12 @@ struct ContentView: View {
                 navigationPath.append(latestScreenshot)
             }
         }
+    }
+    
+    // Function to navigate to home from anywhere
+    private func navigateToHome() {
+        navigationPath.removeLast(navigationPath.count)
+        selectedScreenshot = nil
     }
 }
 

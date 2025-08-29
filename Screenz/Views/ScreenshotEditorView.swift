@@ -11,6 +11,7 @@ import AppKit
 struct ScreenshotEditorView: View {
     let screenshot: Screenshot
     @ObservedObject var screenshotService: ScreenshotService
+    let navigateToHome: () -> Void
     @Environment(\.dismiss) private var dismiss
     
     @State private var selectedTool: DrawingTool = .pen
@@ -108,6 +109,15 @@ struct ScreenshotEditorView: View {
                         .fontWeight(.semibold)
                     
                     Spacer()
+                    
+                    // Add Home button
+                    Button(action: navigateToHome) {
+                        Image(systemName: "house")
+                            .font(.title2)
+                            .foregroundColor(.blue)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Go to Home")
                     
                     Button(action: { dismiss() }) {
                         Image(systemName: "xmark.circle.fill")
@@ -368,7 +378,9 @@ struct ScreenshotEditorView: View {
         screenshotService.screenshots.insert(editedScreenshot, at: 0)
         
         print("✅ Saved edited screenshot: \(editedFilename)")
-        dismiss()
+        
+        // Navigate to home page instead of just dismissing
+        navigateToHome()
     }
     
     private func exportScreenshot() {
@@ -450,7 +462,7 @@ struct ScreenshotEditorView: View {
         let scaledImageSize = CGSize(width: originalSize.width * scale, height: originalSize.height * scale)
         
         // Add padding around the image - increased to 108px
-        let padding: CGFloat = 220
+        let padding: CGFloat = 108
         let finalSize = CGSize(
             width: scaledImageSize.width + (padding * 2),
             height: scaledImageSize.height + (padding * 2)
